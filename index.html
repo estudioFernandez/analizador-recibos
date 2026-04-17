@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Analizador de Recibos de Haberes</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f4f6fb; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState } = React;
+
+    const PASS = "Estudio2006";
+
+    const SUMAR = {
+      "001001":1,"001002":1,"001003":1,"022022":1,"005934":1,"005915":1,"001111":1,
+      "930000":1,"931000":1,"932000":1,"001022":1,"001014":1,"0022011":1,"001020":1,
+      "0022022":1,"001000":1,"001005":1,"088000":1,"135388":1,"135378":1,"095000":1,
+      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"15388":1,"001004":1
+    };
+    const NO_SUMAR = {
+      "002001":1,"002000":1,"002020":1,"0098011":1,"06000":1,"05800":1,"318008":1,
+      "940000":1,"941000":1,"942000":1,"102000":1,"809000":1,"709000":1,"19598":1,
+      "319011":1,"518008":1,"30900":1,"14923":1,"060000":1,"005902":1
+    };
+    const RESTAR = {"204000":1,"195000":1};
+    const ALERTAR = {"15388":1,"135388":1};
+
+    function clasificar(cod, juzgado) {
+      if (RESTAR[cod]) return "restar";
+      if (ALERTAR[cod]) return "alerta_especial";
+      if (cod === "005934") return juzgado === "2" ? "no_suma_excepcion" : "sumar";
+      if (cod === "003900") return (juzgado === "1" || juzgado === "9") ? "no_suma_excepcion" : "sumar";
+      if (SUMAR[cod]) return "sumar";
+      if (NO_SUMAR[cod]) return "no_sumar";
+      return "desconocido";
+    }
+
+    function parseMonto(raw) {
+      if (/,\d{2}$/.test(raw)) return parseFloat(raw.replace(/\./g,"").replace(",","."));
+      return parseFloat(raw.replace(/,/g,""));
+    }
+
+    const MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
+
+    function detectarPeriodo(linea) {
+      const m1 = linea.match(/[Ff]echa\s+[Ll]iquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m1) return m1[2].padStart(2,"0") + "/" + m1[3];
+      for (let i = 0; i < MESES.length; i++) {
+        const rx = new RegExp(MESES[i] + "\\s+(\\d{4})");
+        const m2 = linea.match(rx);
+        if (m2) return String(i+1).padStart(2,"0") + "/" + m2[1];
+      }
+      return null;
+    }
+
+    function parsearBloque(texto, juzgado) {
+      const lineas = texto.split("\n");
+      const items = [], alertas = [], vistos = {};
+      let periodo = null;
+      for (let i = 0; i < lineas.length; i++) {
+        const l = lineas[i].trim();
+        if (!l) continue;
+        if (!periodo) periodo = detectarPeriodo(l);
+        const mc2 = l.match(/^(\d{3})\s+(\d{3})\s+/);
+        const mc1 = !mc2 ? l.match(/^(\d{5,8})\s+/) : null;
+        let cod = null;
+        if (mc2) cod = mc2[1] + mc2[2];
+        else if (mc1) cod = mc1[1];
+        if (!cod) continue;
+        const reM = /(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/g;
+        const found = [];
+        let fx;
+        while ((fx = reM.exec(l)) !== null) found.push(fx[0]);
+        if (!found.length) continue;
+        const monto = parseMonto(found[0]);
+        if (isNaN(monto) || monto === 0) continue;
+        const clase = clasificar(cod, juzgado);
+        if (clase === "desconocido" && !vistos[cod]) {
+          vistos[cod] = 1;
+          alertas.push({tipo:"desconocido", cod, linea:l});
+        } else if (clase === "alerta_especial") {
+          alertas.push({tipo:"alerta_especial", cod, linea:l, monto});
+        } else if (clase === "no_suma_excepcion") {
+          alertas.push({tipo:"excepcion_juzgado", cod, linea:l, monto});
+        }
+        items.push({cod, monto, clase, linea:l});
+      }
+      const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
+      return {periodo, items, sumaTotal, alertas};
+    }
+
+    function dividirEnPeriodos(texto) {
+      const bloques = texto.split(/(?=.*[Ff]echa\s+[Ll]iquidaci[oó]n)/);
+      return bloques.filter(b => b.trim()).length > 0 ? bloques.filter(b => b.trim()) : [texto];
+    }
+
+    function parsePeriodo(p) {
+      if (!p) return 0;
+      const parts = p.split("/");
+      return parseInt(parts[1]) * 100 + parseInt(parts[0]);
+    }
+
+    function fmt(n) {
+      return n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+
+    const S = {
+      wrap: {fontFamily:"system-ui,sans-serif", padding:20, maxWidth:920, margin:"0 auto", color:"#1a1a2e"},
+      h2: {marginBottom:4, color:"#1a1a2e"},
+      sub: {color:"#666", fontSize:13, marginBottom:18},
+      inp: {width:80, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:15},
+      hint: {fontSize:12, color:"#b36a00", fontWeight:600},
+      textarea: {width:"100%", minHeight:140, padding:10, border:"1px solid #ccc", borderRadius:8, fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10},
+      btnPrimary: {padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14},
+      btnRed: {padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14},
+      btn: {padding:"4px 10px", borderRadius:5, cursor:"pointer", fontSize:12, border:"1px solid #4a90d9", background:"white", color:"#4a90d9", fontWeight:600},
+      alertBox: {background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16},
+      table: {width:"100%", borderCollapse:"collapse", fontSize:13, marginBottom:12},
+      th: {padding:"8px 10px", textAlign:"left", background:"#1a1a2e", color:"white"},
+      thr: {padding:"8px 10px", textAlign:"right", background:"#1a1a2e", color:"white"},
+      thc: {padding:"8px 10px", textAlign:"center", background:"#1a1a2e", color:"white"},
+      td: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8"},
+      tdr: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8", textAlign:"right"},
+      tdc: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8", textAlign:"center"},
+      dth: {padding:"4px 8px", textAlign:"left", background:"#dce8f8", color:"#1a1a2e"},
+      dthr: {padding:"4px 8px", textAlign:"right", background:"#dce8f8", color:"#1a1a2e"},
+      dw: {background:"#f0f7ff", border:"1px solid #4a90d9", borderRadius:8, padding:14, marginBottom:14},
+    };
+
+    function EstadoTag({clase, juzgado}) {
+      const map = {
+        sumar:            {label:"Se suma",           bg:"#e8f5e9", color:"#1a6e2e"},
+        no_sumar:         {label:"No se suma",         bg:"#f5f5f5", color:"#555"},
+        restar:           {label:"Se resta",           bg:"#fce4ec", color:"#c62828"},
+        desconocido:      {label:"DESCONOCIDO",        bg:"#fff3e0", color:"#e65100"},
+        alerta_especial:  {label:"Alertar a Lean",     bg:"#fffde7", color:"#f57f17"},
+        no_suma_excepcion:{label:"No suma (Jdo. " + juzgado + ")", bg:"#fff3e0", color:"#bf360c"},
+      };
+      const st = map[clase] || {label:clase, bg:"#eee", color:"#333"};
+      return <span style={{background:st.bg, color:st.color, padding:"2px 7px", borderRadius:4, fontSize:11, fontWeight:600}}>{st.label}</span>;
+    }
+
+    function Login({onOk}) {
+      const [val, setVal] = useState("");
+      const [err, setErr] = useState(false);
+      const intentar = () => {
+        if (val === PASS) { onOk(); }
+        else { setErr(true); setVal(""); }
+      };
+      return (
+        <div style={{display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:"#f4f6fb"}}>
+          <div style={{background:"white", borderRadius:12, padding:40, boxShadow:"0 4px 24px rgba(0,0,0,0.10)", minWidth:320, textAlign:"center"}}>
+            <div style={{fontSize:36, marginBottom:8}}>🔒</div>
+            <h2 style={{marginBottom:4, color:"#1a1a2e"}}>Analizador de Recibos</h2>
+            <p style={{color:"#666", fontSize:13, marginBottom:24}}>Ingresa la contrasena para continuar</p>
+            <input
+              type="password"
+              placeholder="Contrasena"
+              value={val}
+              onChange={e => { setVal(e.target.value); setErr(false); }}
+              onKeyDown={e => { if(e.key==="Enter") intentar(); }}
+              style={{width:"100%", padding:"10px 12px", border:"1px solid " + (err ? "#e74c3c" : "#ccc"), borderRadius:6, fontSize:15, marginBottom:8, outline:"none"}}
+            />
+            {err && <div style={{color:"#e74c3c", fontSize:13, marginBottom:8}}>Contrasena incorrecta</div>}
+            <button onClick={intentar} style={{width:"100%", padding:"10px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:15}}>
+              Ingresar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [auth, setAuth] = useState(false);
+      const [juzgado, setJuzgado] = useState("");
+      const [texto, setTexto] = useState("");
+      const [resultados, setResultados] = useState([]);
+      const [detalle, setDetalle] = useState(null);
+
+      if (!auth) return <Login onOk={() => setAuth(true)} />;
+
+      const hintJuzgado = juzgado === "2" ? "Juzgado 2: 005934 NO se suma"
+        : (juzgado === "1" || juzgado === "9") ? "Juzgado " + juzgado + ": 003900 NO se suma" : "";
+
+      const procesar = () => {
+        if (!juzgado) { alert("Ingresa el numero de juzgado."); return; }
+        if (!texto.trim()) { alert("Pega el texto del recibo primero."); return; }
+        const bloques = dividirEnPeriodos(texto);
+        const nuevos = bloques.map(b => parsearBloque(b, juzgado)).filter(r => r.items.length > 0);
+        setResultados(nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo)));
+        setDetalle(null);
+      };
+
+      const limpiar = () => { setResultados([]); setTexto(""); setDetalle(null); };
+      const totalGeneral = resultados.reduce((a,r) => a + (r.sumaTotal||0), 0);
+      const todasAlertas = resultados.reduce((acc, r, i) =>
+        acc.concat((r.alertas||[]).map(a => ({...a, periodo: r.periodo, idx: i}))), []);
+
+      return (
+        <div style={S.wrap}>
+          <h2 style={S.h2}>Analizador de Recibos de Haberes</h2>
+          <p style={S.sub}>Abri el PDF, selecciona todo (Ctrl+A), copia (Ctrl+C) y pega abajo. La app separa cada mensual automaticamente.</p>
+
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
+            <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
+            <input style={S.inp} value={juzgado} onChange={e => setJuzgado(e.target.value)} placeholder="ej: 7"/>
+            {hintJuzgado && <span style={S.hint}>{hintJuzgado}</span>}
+          </div>
+
+          <textarea style={S.textarea} placeholder="Pega aca el texto copiado del PDF..." value={texto} onChange={e => setTexto(e.target.value)}/>
+
+          <div style={{display:"flex", gap:10, marginBottom:20}}>
+            <button style={S.btnPrimary} onClick={procesar}>Analizar</button>
+            {resultados.length > 0 && <button style={S.btnRed} onClick={limpiar}>Limpiar</button>}
+          </div>
+
+          {todasAlertas.length > 0 && (
+            <div style={S.alertBox}>
+              <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
+              <table style={{...S.table, marginBottom:0}}>
+                <thead><tr>
+                  <th style={S.th}>Periodo</th>
+                  <th style={S.th}>Codigo</th>
+                  <th style={S.th}>Tipo</th>
+                  <th style={S.th}>Linea</th>
+                </tr></thead>
+                <tbody>
+                  {todasAlertas.map((a,i) => (
+                    <tr key={i} style={{background: i%2===0 ? "#fffde7" : "#fff8e1"}}>
+                      <td style={S.td}>{a.periodo||"-"}</td>
+                      <td style={{...S.td, fontWeight:700}}>{a.cod}</td>
+                      <td style={S.td}>
+                        {a.tipo === "desconocido" ? "No reconocido - revisar si se suma" :
+                         a.tipo === "alerta_especial" ? "Consultar a Lean" :
+                         "No suma por excepcion de juzgado"}
+                      </td>
+                      <td style={{...S.td, fontSize:11, color:"#666"}}>{(a.linea||"").slice(0,70)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {resultados.length > 0 && (
+            <table style={S.table}>
+              <thead><tr>
+                <th style={S.th}>Periodo</th>
+                <th style={S.thr}>Codigos sumados</th>
+                <th style={S.thr}>Total ($)</th>
+                <th style={S.thc}>Alertas</th>
+                <th style={S.thc}>Detalle</th>
+              </tr></thead>
+              <tbody>
+                {resultados.map((r, i) => [
+                  <tr key={i} style={{background: i%2===0 ? "#f9f9f9" : "white"}}>
+                    <td style={{...S.td, fontWeight:700, fontSize:15}}>{r.periodo||"-"}</td>
+                    <td style={S.tdr}>{r.items.filter(it => it.clase==="sumar").length}</td>
+                    <td style={{...S.tdr, fontWeight:700, color:"#1a6e2e", fontSize:15}}>{"$"+fmt(r.sumaTotal)}</td>
+                    <td style={S.tdc}>
+                      {r.alertas && r.alertas.length > 0
+                        ? <span style={{color:"#e67e22", fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
+                        : <span style={{color:"#1a6e2e"}}>OK</span>}
+                    </td>
+                    <td style={S.tdc}>
+                      <button style={S.btn} onClick={() => setDetalle(detalle===i ? null : i)}>
+                        {detalle===i ? "Cerrar" : "Ver"}
+                      </button>
+                    </td>
+                  </tr>,
+                  detalle===i && (
+                    <tr key={"d"+i}>
+                      <td colSpan={5} style={{padding:0}}>
+                        <div style={S.dw}>
+                          <strong style={{display:"block", marginBottom:8}}>{"Detalle " + (r.periodo||"")}</strong>
+                          <table style={{...S.table, marginBottom:0}}>
+                            <thead><tr>
+                              <th style={S.dth}>Codigo</th>
+                              <th style={S.dthr}>Monto</th>
+                              <th style={S.dth}>Estado</th>
+                              <th style={S.dth}>Linea original</th>
+                            </tr></thead>
+                            <tbody>
+                              {r.items.map((it, k) => (
+                                <tr key={k} style={{background: it.clase==="sumar"?"#e8f5e9": it.clase==="desconocido"?"#fff3e0": it.clase==="restar"?"#fce4ec": it.clase==="alerta_especial"?"#fffde7":"white"}}>
+                                  <td style={S.td}><strong>{it.cod}</strong></td>
+                                  <td style={S.tdr}>{"$"+fmt(it.monto)}</td>
+                                  <td style={S.td}><EstadoTag clase={it.clase} juzgado={juzgado}/></td>
+                                  <td style={{...S.td, color:"#666", fontSize:11}}>{it.linea.slice(0,90)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                ])}
+              </tbody>
+              <tfoot>
+                <tr style={{background:"#1a1a2e", color:"white", fontWeight:700}}>
+                  <td style={{padding:10}}>TOTAL GENERAL</td>
+                  <td style={{padding:10}}></td>
+                  <td style={{padding:10, textAlign:"right", fontSize:15}}>{"$"+fmt(totalGeneral)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
