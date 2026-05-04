@@ -122,32 +122,10 @@
       textarea: {width:"100%", minHeight:140, padding:10, border:"1px solid #ccc", borderRadius:8, fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10},
       btnPrimary: {padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14},
       btnRed: {padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14},
-      btn: {padding:"4px 10px", borderRadius:5, cursor:"pointer", fontSize:12, border:"1px solid #4a90d9", background:"white", color:"#4a90d9", fontWeight:600},
       alertBox: {background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16},
       table: {width:"100%", borderCollapse:"collapse", fontSize:13, marginBottom:12},
       th: {padding:"8px 10px", textAlign:"left", background:"#1a1a2e", color:"white"},
-      thr: {padding:"8px 10px", textAlign:"right", background:"#1a1a2e", color:"white"},
-      thc: {padding:"8px 10px", textAlign:"center", background:"#1a1a2e", color:"white"},
-      td: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8"},
-      tdr: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8", textAlign:"right"},
-      tdc: {padding:"7px 10px", borderBottom:"1px solid #e8e8e8", textAlign:"center"},
-      dth: {padding:"4px 8px", textAlign:"left", background:"#dce8f8", color:"#1a1a2e"},
-      dthr: {padding:"4px 8px", textAlign:"right", background:"#dce8f8", color:"#1a1a2e"},
-      dw: {background:"#f0f7ff", border:"1px solid #4a90d9", borderRadius:8, padding:14, marginBottom:14},
     };
-
-    function EstadoTag({clase, juzgado}) {
-      const map = {
-        sumar:            {label:"Se suma",           bg:"#e8f5e9", color:"#1a6e2e"},
-        no_sumar:         {label:"No se suma",         bg:"#f5f5f5", color:"#555"},
-        restar:           {label:"Se resta",           bg:"#fce4ec", color:"#c62828"},
-        desconocido:      {label:"DESCONOCIDO",        bg:"#fff3e0", color:"#e65100"},
-        alerta_especial:  {label:"Alertar a Lean",     bg:"#fffde7", color:"#f57f17"},
-        no_suma_excepcion:{label:"No suma (Jdo. " + juzgado + ")", bg:"#fff3e0", color:"#bf360c"},
-      };
-      const st = map[clase] || {label:clase, bg:"#eee", color:"#333"};
-      return <span style={{background:st.bg, color:st.color, padding:"2px 7px", borderRadius:4, fontSize:11, fontWeight:600}}>{st.label}</span>;
-    }
 
     function Login({onOk}) {
       const [val, setVal] = useState("");
@@ -184,7 +162,6 @@
       const [juzgado, setJuzgado] = useState("");
       const [texto, setTexto] = useState("");
       const [resultados, setResultados] = useState([]);
-      const [detalle, setDetalle] = useState(null);
 
       if (!auth) return <Login onOk={() => setAuth(true)} />;
 
@@ -197,10 +174,9 @@
         const bloques = dividirEnPeriodos(texto);
         const nuevos = bloques.map(b => parsearBloque(b, juzgado)).filter(r => r.items.length > 0);
         setResultados(nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo)));
-        setDetalle(null);
       };
 
-      const limpiar = () => { setResultados([]); setTexto(""); setDetalle(null); };
+      const limpiar = () => { setResultados([]); setTexto(""); };
       const totalGeneral = resultados.reduce((a,r) => a + (r.sumaTotal||0), 0);
       const todasAlertas = resultados.reduce((acc, r, i) =>
         acc.concat((r.alertas||[]).map(a => ({...a, periodo: r.periodo, idx: i}))), []);
@@ -213,7 +189,7 @@
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
             <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
             <input style={S.inp} value={juzgado} onChange={e => setJuzgado(e.target.value)} placeholder="ej: 7"/>
-            {hintJuzgado && <span style={S.hint}>{hintJuzgado}</span>}
+            {hintJuzgado && <span style={{fontSize:12, color:"#b36a00", fontWeight:600}}>{hintJuzgado}</span>}
           </div>
 
           <textarea style={S.textarea} placeholder="Pega aca el texto copiado del PDF..." value={texto} onChange={e => setTexto(e.target.value)}/>
@@ -236,14 +212,14 @@
                 <tbody>
                   {todasAlertas.map((a,i) => (
                     <tr key={i} style={{background: i%2===0 ? "#fffde7" : "#fff8e1"}}>
-                      <td style={S.td}>{a.periodo||"-"}</td>
-                      <td style={{...S.td, fontWeight:700}}>{a.cod}</td>
-                      <td style={S.td}>
+                      <td style={{padding:"6px 10px"}}>{a.periodo||"-"}</td>
+                      <td style={{padding:"6px 10px", fontWeight:700}}>{a.cod}</td>
+                      <td style={{padding:"6px 10px"}}>
                         {a.tipo === "desconocido" ? "No reconocido - revisar si se suma" :
                          a.tipo === "alerta_especial" ? "Consultar a Lean" :
                          "No suma por excepcion de juzgado"}
                       </td>
-                      <td style={{...S.td, fontSize:11, color:"#666"}}>{(a.linea||"").slice(0,70)}</td>
+                      <td style={{padding:"6px 10px", fontSize:11, color:"#666"}}>{(a.linea||"").slice(0,70)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -252,69 +228,54 @@
           )}
 
           {resultados.length > 0 && (
-            <table style={S.table}>
-              <thead><tr>
-                <th style={S.th}>Periodo</th>
-                <th style={S.thr}>Codigos sumados</th>
-                <th style={S.thr}>Total ($)</th>
-                <th style={S.thc}>Alertas</th>
-                <th style={S.thc}>Detalle</th>
-              </tr></thead>
-              <tbody>
-                {resultados.map((r, i) => [
-                  <tr key={i} style={{background: i%2===0 ? "#f9f9f9" : "white"}}>
-                    <td style={{...S.td, fontWeight:700, fontSize:15}}>{r.periodo||"-"}</td>
-                    <td style={S.tdr}>{r.items.filter(it => it.clase==="sumar").length}</td>
-                    <td style={{...S.tdr, fontWeight:700, color:"#1a6e2e", fontSize:15}}>{"$"+fmt(r.sumaTotal)}</td>
-                    <td style={S.tdc}>
+            <>
+              {resultados.map((r, i) => {
+                const sumados = r.items.filter(it => it.clase === "sumar");
+                const noSumados = r.items.filter(it => it.clase !== "sumar");
+                return (
+                  <div key={i} style={{marginBottom:24, border:"1px solid #dde3f0", borderRadius:10, overflow:"hidden"}}>
+                    <div style={{background:"#1a1a2e", color:"white", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8}}>
+                      <span style={{fontWeight:700, fontSize:16}}>{r.periodo||"-"}</span>
+                      <span style={{fontWeight:700, fontSize:16}}>Total: {"$"+fmt(r.sumaTotal)}</span>
                       {r.alertas && r.alertas.length > 0
-                        ? <span style={{color:"#e67e22", fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
-                        : <span style={{color:"#1a6e2e"}}>OK</span>}
-                    </td>
-                    <td style={S.tdc}>
-                      <button style={S.btn} onClick={() => setDetalle(detalle===i ? null : i)}>
-                        {detalle===i ? "Cerrar" : "Ver"}
-                      </button>
-                    </td>
-                  </tr>,
-                  detalle===i && (
-                    <tr key={"d"+i}>
-                      <td colSpan={5} style={{padding:0}}>
-                        <div style={S.dw}>
-                          <strong style={{display:"block", marginBottom:8}}>{"Detalle " + (r.periodo||"")}</strong>
-                          <table style={{...S.table, marginBottom:0}}>
-                            <thead><tr>
-                              <th style={S.dth}>Codigo</th>
-                              <th style={S.dthr}>Monto</th>
-                              <th style={S.dth}>Estado</th>
-                              <th style={S.dth}>Linea original</th>
-                            </tr></thead>
-                            <tbody>
-                              {r.items.map((it, k) => (
-                                <tr key={k} style={{background: it.clase==="sumar"?"#e8f5e9": it.clase==="desconocido"?"#fff3e0": it.clase==="restar"?"#fce4ec": it.clase==="alerta_especial"?"#fffde7":"white"}}>
-                                  <td style={S.td}><strong>{it.cod}</strong></td>
-                                  <td style={S.tdr}>{"$"+fmt(it.monto)}</td>
-                                  <td style={S.td}><EstadoTag clase={it.clase} juzgado={juzgado}/></td>
-                                  <td style={{...S.td, color:"#666", fontSize:11}}>{it.linea.slice(0,90)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                ])}
-              </tbody>
-              <tfoot>
-                <tr style={{background:"#1a1a2e", color:"white", fontWeight:700}}>
-                  <td style={{padding:10}}>TOTAL GENERAL</td>
-                  <td style={{padding:10}}></td>
-                  <td style={{padding:10, textAlign:"right", fontSize:15}}>{"$"+fmt(totalGeneral)}</td>
-                  <td colSpan={2}></td>
-                </tr>
-              </tfoot>
-            </table>
+                        ? <span style={{background:"#e67e22", color:"white", borderRadius:5, padding:"2px 10px", fontSize:13, fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
+                        : <span style={{background:"#1a6e2e", color:"white", borderRadius:5, padding:"2px 10px", fontSize:13}}>OK</span>}
+                    </div>
+                    <div style={{display:"grid", gridTemplateColumns:"1fr 1fr"}}>
+                      <div style={{padding:12, borderRight:"1px solid #dde3f0"}}>
+                        <div style={{fontWeight:700, color:"#1a6e2e", marginBottom:8, fontSize:13}}>SE SUMAN</div>
+                        {sumados.length === 0
+                          ? <div style={{color:"#aaa", fontSize:12}}>Ninguno</div>
+                          : sumados.map((it, k) => (
+                            <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"3px 0", borderBottom:"1px solid #f0f0f0", fontSize:13}}>
+                              <span style={{fontWeight:600, color:"#1a1a2e"}}>{it.cod}</span>
+                              <span style={{color:"#1a6e2e", fontWeight:600}}>{"$"+fmt(it.monto)}</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div style={{padding:12}}>
+                        <div style={{fontWeight:700, color:"#888", marginBottom:8, fontSize:13}}>NO SE SUMAN</div>
+                        {noSumados.length === 0
+                          ? <div style={{color:"#aaa", fontSize:12}}>Ninguno</div>
+                          : noSumados.map((it, k) => {
+                            const color = it.clase==="desconocido"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#888";
+                            return (
+                              <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"3px 0", borderBottom:"1px solid #f0f0f0", fontSize:13}}>
+                                <span style={{fontWeight:600, color}}>{it.cod}</span>
+                                <span style={{color:"#888"}}>{"$"+fmt(it.monto)}</span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{background:"#1a1a2e", color:"white", fontWeight:700, padding:"12px 16px", borderRadius:8, display:"flex", justifyContent:"space-between", fontSize:15}}>
+                <span>TOTAL GENERAL</span>
+                <span>{"$"+fmt(totalGeneral)}</span>
+              </div>
+            </>
           )}
         </div>
       );
