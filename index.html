@@ -113,43 +113,45 @@
       return n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
     }
 
-    const S = {
-      wrap: {fontFamily:"system-ui,sans-serif", padding:20, maxWidth:920, margin:"0 auto", color:"#1a1a2e"},
-      h2: {marginBottom:4, color:"#1a1a2e"},
-      sub: {color:"#666", fontSize:13, marginBottom:18},
-      inp: {width:80, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:15},
-      hint: {fontSize:12, color:"#b36a00", fontWeight:600},
-      textarea: {width:"100%", minHeight:140, padding:10, border:"1px solid #ccc", borderRadius:8, fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10},
-      btnPrimary: {padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14},
-      btnRed: {padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14},
-      alertBox: {background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16},
-      table: {width:"100%", borderCollapse:"collapse", fontSize:13, marginBottom:12},
-      th: {padding:"8px 10px", textAlign:"left", background:"#1a1a2e", color:"white"},
-    };
+    function FilaCodigos({label, items, colorFn}) {
+      if (items.length === 0) return null;
+      return (
+        <div style={{marginBottom:6, fontSize:13, lineHeight:1.8}}>
+          <span style={{fontWeight:700, fontSize:12, marginRight:10}}>{label}</span>
+          {items.map((it, k) => (
+            <span key={k}>
+              <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod}</span>
+              {" "}
+              <span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>
+                {"$"+fmt(it.monto)}
+              </span>
+              {k < items.length - 1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
+            </span>
+          ))}
+        </div>
+      );
+    }
 
     function Login({onOk}) {
       const [val, setVal] = useState("");
       const [err, setErr] = useState(false);
       const intentar = () => {
-        if (val === PASS) { onOk(); }
+        if (val === PASS) onOk();
         else { setErr(true); setVal(""); }
       };
       return (
-        <div style={{display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", background:"#f4f6fb"}}>
-          <div style={{background:"white", borderRadius:12, padding:40, boxShadow:"0 4px 24px rgba(0,0,0,0.10)", minWidth:320, textAlign:"center"}}>
-            <div style={{fontSize:36, marginBottom:8}}>🔒</div>
-            <h2 style={{marginBottom:4, color:"#1a1a2e"}}>Analizador de Recibos</h2>
-            <p style={{color:"#666", fontSize:13, marginBottom:24}}>Ingresa la contrasena para continuar</p>
-            <input
-              type="password"
-              placeholder="Contrasena"
-              value={val}
-              onChange={e => { setVal(e.target.value); setErr(false); }}
-              onKeyDown={e => { if(e.key==="Enter") intentar(); }}
-              style={{width:"100%", padding:"10px 12px", border:"1px solid " + (err ? "#e74c3c" : "#ccc"), borderRadius:6, fontSize:15, marginBottom:8, outline:"none"}}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f4f6fb"}}>
+          <div style={{background:"white",borderRadius:12,padding:40,boxShadow:"0 4px 24px rgba(0,0,0,0.10)",minWidth:320,textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:8}}>🔒</div>
+            <h2 style={{marginBottom:4,color:"#1a1a2e"}}>Analizador de Recibos</h2>
+            <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contrasena para continuar</p>
+            <input type="password" placeholder="Contrasena" value={val}
+              onChange={e=>{setVal(e.target.value);setErr(false);}}
+              onKeyDown={e=>{if(e.key==="Enter")intentar();}}
+              style={{width:"100%",padding:"10px 12px",border:"1px solid "+(err?"#e74c3c":"#ccc"),borderRadius:6,fontSize:15,marginBottom:8,outline:"none"}}
             />
-            {err && <div style={{color:"#e74c3c", fontSize:13, marginBottom:8}}>Contrasena incorrecta</div>}
-            <button onClick={intentar} style={{width:"100%", padding:"10px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:15}}>
+            {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>Contrasena incorrecta</div>}
+            <button onClick={intentar} style={{width:"100%",padding:"10px",background:"#1a1a2e",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15}}>
               Ingresar
             </button>
           </div>
@@ -163,10 +165,10 @@
       const [texto, setTexto] = useState("");
       const [resultados, setResultados] = useState([]);
 
-      if (!auth) return <Login onOk={() => setAuth(true)} />;
+      if (!auth) return <Login onOk={()=>setAuth(true)} />;
 
-      const hintJuzgado = juzgado === "2" ? "Juzgado 2: 005934 NO se suma"
-        : (juzgado === "1" || juzgado === "9") ? "Juzgado " + juzgado + ": 003900 NO se suma" : "";
+      const hint = juzgado === "2" ? "Juzgado 2: 005934 NO se suma"
+        : (juzgado === "1" || juzgado === "9") ? "Juzgado "+juzgado+": 003900 NO se suma" : "";
 
       const procesar = () => {
         if (!juzgado) { alert("Ingresa el numero de juzgado."); return; }
@@ -176,106 +178,78 @@
         setResultados(nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo)));
       };
 
-      const limpiar = () => { setResultados([]); setTexto(""); };
       const totalGeneral = resultados.reduce((a,r) => a + (r.sumaTotal||0), 0);
-      const todasAlertas = resultados.reduce((acc, r, i) =>
-        acc.concat((r.alertas||[]).map(a => ({...a, periodo: r.periodo, idx: i}))), []);
+      const todasAlertas = resultados.reduce((acc,r) =>
+        acc.concat((r.alertas||[]).map(a => ({...a, periodo:r.periodo}))), []);
 
       return (
-        <div style={S.wrap}>
-          <h2 style={S.h2}>Analizador de Recibos de Haberes</h2>
-          <p style={S.sub}>Abri el PDF, selecciona todo (Ctrl+A), copia (Ctrl+C) y pega abajo. La app separa cada mensual automaticamente.</p>
+        <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
+          <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
+          <p style={{color:"#666", fontSize:13, marginBottom:18}}>Abri el PDF, Ctrl+A, Ctrl+C y pega abajo.</p>
 
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
             <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
-            <input style={S.inp} value={juzgado} onChange={e => setJuzgado(e.target.value)} placeholder="ej: 7"/>
-            {hintJuzgado && <span style={{fontSize:12, color:"#b36a00", fontWeight:600}}>{hintJuzgado}</span>}
+            <input value={juzgado} onChange={e=>setJuzgado(e.target.value)} placeholder="ej: 7"
+              style={{width:80, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:15}}/>
+            {hint && <span style={{fontSize:12, color:"#b36a00", fontWeight:600}}>{hint}</span>}
           </div>
 
-          <textarea style={S.textarea} placeholder="Pega aca el texto copiado del PDF..." value={texto} onChange={e => setTexto(e.target.value)}/>
+          <textarea value={texto} onChange={e=>setTexto(e.target.value)}
+            placeholder="Pega aca el texto copiado del PDF..."
+            style={{width:"100%", minHeight:120, padding:10, border:"1px solid #ccc", borderRadius:8, fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10}}
+          />
 
           <div style={{display:"flex", gap:10, marginBottom:20}}>
-            <button style={S.btnPrimary} onClick={procesar}>Analizar</button>
-            {resultados.length > 0 && <button style={S.btnRed} onClick={limpiar}>Limpiar</button>}
+            <button onClick={procesar} style={{padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
+              Analizar
+            </button>
+            {resultados.length > 0 &&
+              <button onClick={()=>{setResultados([]);setTexto("");}}
+                style={{padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14}}>
+                Limpiar
+              </button>}
           </div>
 
           {todasAlertas.length > 0 && (
-            <div style={S.alertBox}>
+            <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
               <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
-              <table style={{...S.table, marginBottom:0}}>
-                <thead><tr>
-                  <th style={S.th}>Periodo</th>
-                  <th style={S.th}>Codigo</th>
-                  <th style={S.th}>Tipo</th>
-                  <th style={S.th}>Linea</th>
-                </tr></thead>
-                <tbody>
-                  {todasAlertas.map((a,i) => (
-                    <tr key={i} style={{background: i%2===0 ? "#fffde7" : "#fff8e1"}}>
-                      <td style={{padding:"6px 10px"}}>{a.periodo||"-"}</td>
-                      <td style={{padding:"6px 10px", fontWeight:700}}>{a.cod}</td>
-                      <td style={{padding:"6px 10px"}}>
-                        {a.tipo === "desconocido" ? "No reconocido - revisar si se suma" :
-                         a.tipo === "alerta_especial" ? "Consultar a Lean" :
-                         "No suma por excepcion de juzgado"}
-                      </td>
-                      <td style={{padding:"6px 10px", fontSize:11, color:"#666"}}>{(a.linea||"").slice(0,70)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {todasAlertas.map((a,i) => (
+                <div key={i} style={{fontSize:13, marginBottom:4}}>
+                  <strong>{a.periodo}</strong> — Codigo <strong>{a.cod}</strong>:{" "}
+                  {a.tipo==="desconocido" ? "No reconocido, revisar si se suma" :
+                   a.tipo==="alerta_especial" ? "Consultar a Lean" :
+                   "No suma por excepcion de juzgado"}
+                </div>
+              ))}
             </div>
           )}
 
-          {resultados.length > 0 && (
-            <>
-              {resultados.map((r, i) => {
-                const sumados = r.items.filter(it => it.clase === "sumar");
-                const noSumados = r.items.filter(it => it.clase !== "sumar");
-                return (
-                  <div key={i} style={{marginBottom:24, border:"1px solid #dde3f0", borderRadius:10, overflow:"hidden"}}>
-                    <div style={{background:"#1a1a2e", color:"white", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8}}>
-                      <span style={{fontWeight:700, fontSize:16}}>{r.periodo||"-"}</span>
-                      <span style={{fontWeight:700, fontSize:16}}>Total: {"$"+fmt(r.sumaTotal)}</span>
-                      {r.alertas && r.alertas.length > 0
-                        ? <span style={{background:"#e67e22", color:"white", borderRadius:5, padding:"2px 10px", fontSize:13, fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
-                        : <span style={{background:"#1a6e2e", color:"white", borderRadius:5, padding:"2px 10px", fontSize:13}}>OK</span>}
-                    </div>
-                    <div style={{display:"grid", gridTemplateColumns:"1fr 1fr"}}>
-                      <div style={{padding:12, borderRight:"1px solid #dde3f0"}}>
-                        <div style={{fontWeight:700, color:"#1a6e2e", marginBottom:8, fontSize:13}}>SE SUMAN</div>
-                        {sumados.length === 0
-                          ? <div style={{color:"#aaa", fontSize:12}}>Ninguno</div>
-                          : sumados.map((it, k) => (
-                            <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"3px 0", borderBottom:"1px solid #f0f0f0", fontSize:13}}>
-                              <span style={{fontWeight:600, color:"#1a1a2e"}}>{it.cod}</span>
-                              <span style={{color:"#1a6e2e", fontWeight:600}}>{"$"+fmt(it.monto)}</span>
-                            </div>
-                          ))}
-                      </div>
-                      <div style={{padding:12}}>
-                        <div style={{fontWeight:700, color:"#888", marginBottom:8, fontSize:13}}>NO SE SUMAN</div>
-                        {noSumados.length === 0
-                          ? <div style={{color:"#aaa", fontSize:12}}>Ninguno</div>
-                          : noSumados.map((it, k) => {
-                            const color = it.clase==="desconocido"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#888";
-                            return (
-                              <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"3px 0", borderBottom:"1px solid #f0f0f0", fontSize:13}}>
-                                <span style={{fontWeight:600, color}}>{it.cod}</span>
-                                <span style={{color:"#888"}}>{"$"+fmt(it.monto)}</span>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{background:"#1a1a2e", color:"white", fontWeight:700, padding:"12px 16px", borderRadius:8, display:"flex", justifyContent:"space-between", fontSize:15}}>
-                <span>TOTAL GENERAL</span>
-                <span>{"$"+fmt(totalGeneral)}</span>
+          {resultados.map((r,i) => {
+            const sumados = r.items.filter(it => it.clase === "sumar");
+            const noSumados = r.items.filter(it => it.clase !== "sumar");
+            return (
+              <div key={i} style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
+                <div style={{background:"#1a1a2e", color:"white", padding:"8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6}}>
+                  <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
+                  <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
+                  {r.alertas && r.alertas.length > 0
+                    ? <span style={{background:"#e67e22", borderRadius:4, padding:"1px 8px", fontSize:12, fontWeight:700}}>{r.alertas.length} alerta{r.alertas.length>1?"s":""}</span>
+                    : <span style={{background:"#1a6e2e", borderRadius:4, padding:"1px 8px", fontSize:12}}>OK</span>}
+                </div>
+                <div style={{padding:"10px 14px", background:"white"}}>
+                  <FilaCodigos label="SE SUMAN:" items={sumados} colorFn={()=>"#1a6e2e"} />
+                  <FilaCodigos label="NO SE SUMAN:" items={noSumados}
+                    colorFn={(it) => it.clase==="desconocido"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"} />
+                </div>
               </div>
-            </>
+            );
+          })}
+
+          {resultados.length > 0 && (
+            <div style={{background:"#1a1a2e", color:"white", fontWeight:700, padding:"12px 16px", borderRadius:8, display:"flex", justifyContent:"space-between", fontSize:15}}>
+              <span>TOTAL GENERAL</span>
+              <span>{"$"+fmt(totalGeneral)}</span>
+            </div>
           )}
         </div>
       );
