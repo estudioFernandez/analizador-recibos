@@ -19,89 +19,180 @@
 
     const PASS = "Estudio2006";
 
-    const SUMAR = {
+    const SUMAR_COD = {
       "001001":1,"001002":1,"001003":1,"022022":1,"005934":1,"005915":1,"001111":1,
       "930000":1,"931000":1,"932000":1,"001022":1,"001014":1,"0022011":1,"001020":1,
       "0022022":1,"001000":1,"001005":1,"088000":1,"135388":1,"135378":1,"095000":1,
       "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"15388":1,"001004":1,
       "135389":1,"135390":1,"135391":1,"135392":1,"135393":1,"135394":1,
-      "135395":1,"135396":1,"135397":1,"135398":1,"135399":1,"135400":1
+      "135395":1,"135396":1,"135397":1,"135398":1,"135399":1,"135400":1,
+      "135363":1,"135364":1,"135365":1
     };
-    const NO_SUMAR = {
+    const NO_SUMAR_COD = {
       "002001":1,"002000":1,"002020":1,"0098011":1,"06000":1,"05800":1,"318008":1,
       "940000":1,"941000":1,"942000":1,"102000":1,"809000":1,"709000":1,"19598":1,
       "319011":1,"518008":1,"30900":1,"14923":1,"060000":1,"005902":1,
-      "116000":1,"123000":1
+      "116000":1,"123000":1,"311340":1,"208100":1
     };
-    const RESTAR = {"204000":1,"195000":1};
-    const ALERTAR = {"15388":1};
+    const RESTAR_COD = {"204000":1,"195000":1};
+    const ALERTAR_COD = {"15388":1};
 
-    function clasificar(cod, juzgado) {
-      if (RESTAR[cod]) return "restar";
-      if (ALERTAR[cod]) return "alerta_especial";
+    // FORMATO NUEVO: identificacion por nombre
+    // Agregar nuevos conceptos aca: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
+    const NOMBRES = [
+      // SE SUMAN
+      ["p.b.u", "sumar"],
+      ["prestacion basica universal", "sumar"],
+      ["pbu", "sumar"],
+      ["p.c - prestacion compensatoria", "sumar"],
+      ["prestacion compensatoria", "sumar"],
+      ["pc-haber mensual", "sumar"],
+      ["p.a.p", "sumar"],
+      ["prestacion adic", "sumar"],
+      ["pap-haber mensual", "sumar"],
+      ["pbu p/sentencia judicial", "sumar"],
+      ["pbu sent judicial", "sumar"],
+      ["pfb-haber mensual", "sumar"],
+      ["pension por fallecimiento", "sumar"],
+      ["pensión por fallecimiento", "sumar"],
+      // NO SE SUMAN
+      ["obra social s/haberes pami", "no_sumar"],
+      ["desc obra social", "no_sumar"],
+      ["obra social", "no_sumar"],
+      ["a descontar obra social", "no_sumar"],
+      ["tope acumulacion", "no_sumar"],
+      ["tope por acumulacion", "no_sumar"],
+      ["prestacion anual complementaria", "no_sumar"],
+      ["descuento prestacion anual", "no_sumar"],
+      ["cuota gremial", "no_sumar"],
+      ["credito anses", "no_sumar"],
+      ["desc adelanto ajuste aumento", "no_sumar"],
+      ["aguinaldo", "no_sumar"],
+      // SE RESTA
+      ["ajuste aumento", "restar"],
+    ];
+
+    function clasificarPorNombre(desc) {
+      const d = desc.toLowerCase();
+      for (const [frag, accion] of NOMBRES) {
+        if (d.includes(frag)) return accion;
+      }
+      return "desconocido";
+    }
+
+    function clasificarPorCod(cod, juzgado) {
+      if (RESTAR_COD[cod]) return "restar";
+      if (ALERTAR_COD[cod]) return "alerta_especial";
       if (cod === "005934") return juzgado === "2" ? "no_suma_excepcion" : "sumar";
       if (cod === "003900") return (juzgado === "1" || juzgado === "9") ? "no_suma_excepcion" : "sumar";
-      if (SUMAR[cod]) return "sumar";
-      if (NO_SUMAR[cod]) return "no_sumar";
+      if (SUMAR_COD[cod]) return "sumar";
+      if (NO_SUMAR_COD[cod]) return "no_sumar";
       return "desconocido";
     }
 
     function parseMonto(raw) {
-      if (/,\d{2}$/.test(raw)) return parseFloat(raw.replace(/\./g,"").replace(",","."));
-      return parseFloat(raw.replace(/,/g,""));
+      const limpio = raw.replace(/\$/g,"").replace(/\s/g,"").trim();
+      if (/,\d{2}$/.test(limpio)) return parseFloat(limpio.replace(/\./g,"").replace(",","."));
+      return parseFloat(limpio.replace(/,/g,""));
     }
 
     const MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
-    function detectarPeriodo(linea) {
-      const m1 = linea.match(/[Ff]echa\s+[Ll]iquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (m1) return m1[2].padStart(2,"0") + "/" + m1[3];
+    function detectarPeriodo(linea, lineaSiguiente) {
+      const m1 = linea.match(/[Pp]er[ií]odo\s*[\n\r]?\s*(\d{1,2})\/(\d{4})/);
+      if (m1) return m1[1].padStart(2,"0") + "/" + m1[2];
+      if (/^[Pp]er[ií]odo\s*$/.test(linea) && lineaSiguiente) {
+        const m2 = lineaSiguiente.match(/^(\d{1,2})\/(\d{4})$/);
+        if (m2) return m2[1].padStart(2,"0") + "/" + m2[2];
+      }
+      const m3 = linea.match(/[Ff]echa\s+[Ll]iquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m3) return m3[2].padStart(2,"0") + "/" + m3[3];
+      const m4 = linea.match(/\b(\d{2})\/(\d{4})\b/);
+      if (m4) return m4[1] + "/" + m4[2];
       for (let i = 0; i < MESES.length; i++) {
-        const rx = new RegExp(MESES[i] + "\\s+(\\d{4})");
-        const m2 = linea.match(rx);
-        if (m2) return String(i+1).padStart(2,"0") + "/" + m2[1];
+        const mm = linea.match(new RegExp(MESES[i] + "\\s+(\\d{4})"));
+        if (mm) return String(i+1).padStart(2,"0") + "/" + mm[1];
       }
       return null;
+    }
+
+    function registrarAlerta(clase, cod, desc, linea, monto, alertas, vistos) {
+      if (clase === "desconocido" && !vistos[cod]) {
+        vistos[cod] = 1;
+        alertas.push({tipo:"desconocido", cod, desc, linea, monto});
+      } else if (clase === "alerta_especial" && !vistos[cod]) {
+        vistos[cod] = 1;
+        alertas.push({tipo:"alerta_especial", cod, desc, linea, monto});
+      } else if (clase === "no_suma_excepcion" && !vistos[cod]) {
+        vistos[cod] = 1;
+        alertas.push({tipo:"excepcion_juzgado", cod, desc, linea, monto});
+      }
     }
 
     function parsearBloque(texto, juzgado) {
       const lineas = texto.split("\n");
       const items = [], alertas = [], vistos = {};
       let periodo = null;
+
       for (let i = 0; i < lineas.length; i++) {
         const l = lineas[i].trim();
         if (!l) continue;
-        if (!periodo) periodo = detectarPeriodo(l);
-        const mc2 = l.match(/^(\d{3})\s+(\d{3})\s+/);
-        const mc1 = !mc2 ? l.match(/^(\d{5,8})\s+/) : null;
-        let cod = null;
-        if (mc2) cod = mc2[1] + mc2[2];
-        else if (mc1) cod = mc1[1];
-        if (!cod) continue;
-        const reM = /(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/g;
-        const found = [];
-        let fx;
-        while ((fx = reM.exec(l)) !== null) found.push(fx[0]);
-        if (!found.length) continue;
-        const monto = parseMonto(found[0]);
-        if (isNaN(monto) || monto === 0) continue;
-        const clase = clasificar(cod, juzgado);
-        if (clase === "desconocido" && !vistos[cod]) {
-          vistos[cod] = 1;
-          alertas.push({tipo:"desconocido", cod, linea:l});
-        } else if (clase === "alerta_especial") {
-          alertas.push({tipo:"alerta_especial", cod, linea:l, monto});
-        } else if (clase === "no_suma_excepcion") {
-          alertas.push({tipo:"excepcion_juzgado", cod, linea:l, monto});
+        if (!periodo) periodo = detectarPeriodo(l, lineas[i+1]?.trim());
+
+        // FORMATO VIEJO: "NNN NNN descripcion monto"
+        const mcViejo = l.match(/^(\d{3})\s+(\d{3})\s+(.+?)\s+([\d.,]+)\s*$/);
+        if (mcViejo) {
+          const cod = mcViejo[1] + mcViejo[2];
+          const desc = mcViejo[3].trim();
+          const monto = parseMonto(mcViejo[4]);
+          if (isNaN(monto) || monto === 0) continue;
+          const clase = clasificarPorCod(cod, juzgado);
+          registrarAlerta(clase, cod, desc, l, monto, alertas, vistos);
+          items.push({cod, desc, monto, clase, linea:l, formato:"viejo"});
+          continue;
         }
-        items.push({cod, monto, clase, linea:l});
+
+        // FORMATO VIEJO alternativo: codigo pegado
+        const mcCod = l.match(/^(\d{5,8})\s+(.+?)\s+([\d.,]+)\s*$/);
+        if (mcCod) {
+          const cod = mcCod[1];
+          const desc = mcCod[2].trim();
+          const monto = parseMonto(mcCod[3]);
+          if (isNaN(monto) || monto === 0) continue;
+          const clase = clasificarPorCod(cod, juzgado);
+          registrarAlerta(clase, cod, desc, l, monto, alertas, vistos);
+          items.push({cod, desc, monto, clase, linea:l, formato:"viejo"});
+          continue;
+        }
+
+        // FORMATO NUEVO: "DESCRIPCION $ monto -" o "DESCRIPCION - $ monto"
+        const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*-?\s*$/) ||
+                        l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*$/);
+        if (mcNuevo) {
+          const desc = mcNuevo[1].trim();
+          if (/^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i.test(desc)) continue;
+          const montoRaw = mcNuevo[2].replace(/\./g,"").replace(",",".");
+          const monto = parseFloat(montoRaw);
+          if (isNaN(monto) || monto === 0) continue;
+          const clase = clasificarPorNombre(desc);
+          const key = desc.toLowerCase();
+          if (clase === "desconocido" && !vistos[key]) {
+            vistos[key] = 1;
+            alertas.push({tipo:"desconocido_nombre", desc, linea:l, monto});
+          } else if (clase === "alerta_especial" && !vistos[key]) {
+            vistos[key] = 1;
+            alertas.push({tipo:"alerta_especial", desc, linea:l, monto});
+          }
+          items.push({cod: null, desc, monto, clase, linea:l, formato:"nuevo"});
+        }
       }
+
       const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
       return {periodo, items, sumaTotal, alertas};
     }
 
     function dividirEnPeriodos(texto) {
-      const bloques = texto.split(/(?=.*[Ff]echa\s+[Ll]iquidaci[oó]n)/);
+      const bloques = texto.split(/(?=(?:Per[ií]odo|Fecha\s+Liquidaci[oó]n))/);
       return bloques.filter(b => b.trim()).length > 0 ? bloques.filter(b => b.trim()) : [texto];
     }
 
@@ -122,7 +213,9 @@
           <span style={{fontWeight:700, fontSize:12, marginRight:10}}>{label}</span>
           {items.map((it, k) => (
             <span key={k}>
-              <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod}</span>
+              <span style={{fontWeight:700, color:colorFn(it)}}>
+                {it.cod ? it.cod : it.desc}
+              </span>
               {" "}
               <span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>
                 {"$"+fmt(it.monto)}
@@ -187,7 +280,7 @@
       return (
         <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
-          <p style={{color:"#666", fontSize:13, marginBottom:18}}>Abri el PDF, Ctrl+A, Ctrl+C y pega abajo.</p>
+          <p style={{color:"#666", fontSize:13, marginBottom:18}}>Abri el PDF, Ctrl+A, Ctrl+C y pega abajo. Funciona con formato viejo (codigos) y nuevo (nombres).</p>
 
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
             <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
@@ -216,11 +309,12 @@
             <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
               <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
               {todasAlertas.map((a,i) => (
-                <div key={i} style={{fontSize:13, marginBottom:4}}>
-                  <strong>{a.periodo}</strong> — Codigo <strong>{a.cod}</strong>:{" "}
-                  {a.tipo==="desconocido" ? "No reconocido, revisar si se suma" :
-                   a.tipo==="alerta_especial" ? "Consultar a Lean" :
-                   "No suma por excepcion de juzgado"}
+                <div key={i} style={{fontSize:13, marginBottom:4, padding:"4px 0", borderBottom:"1px solid #fde8a0"}}>
+                  <strong>{a.periodo}</strong> —{" "}
+                  {a.tipo === "desconocido" && <span>Codigo <strong>{a.cod}</strong> no reconocido</span>}
+                  {a.tipo === "desconocido_nombre" && <span>Concepto "<strong>{a.desc}</strong>" no reconocido — revisar si se suma (${fmt(a.monto)})</span>}
+                  {a.tipo === "alerta_especial" && <span>Codigo <strong>{a.cod}</strong> — consultar a Lean</span>}
+                  {a.tipo === "excepcion_juzgado" && <span>Codigo <strong>{a.cod}</strong> no suma en este juzgado</span>}
                 </div>
               ))}
             </div>
@@ -241,7 +335,7 @@
                 <div style={{padding:"10px 14px", background:"white"}}>
                   <FilaCodigos label="SE SUMAN:" items={sumados} colorFn={()=>"#1a6e2e"} />
                   <FilaCodigos label="NO SE SUMAN:" items={noSumados}
-                    colorFn={(it) => it.clase==="desconocido"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"} />
+                    colorFn={(it) => it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"} />
                 </div>
               </div>
             );
