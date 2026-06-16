@@ -15,15 +15,20 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState } = React;
+    const { useState, useEffect, useRef } = React;
 
     const PASS = "Estudio2006";
 
+    // ─────────────────────────────────────────────────────────────
+    //  CÓDIGOS
+    //  Para agregar un código nuevo: ponelo en la lista que corresponda.
+    //  IMPORTANTE: un mismo código NO debe estar en dos listas a la vez.
+    // ─────────────────────────────────────────────────────────────
     const SUMAR_COD = {
       "001001":1,"001002":1,"001003":1,"022022":1,"005934":1,"005915":1,"001111":1,
       "930000":1,"931000":1,"932000":1,"001022":1,"001014":1,"0022011":1,"001020":1,
       "0022022":1,"001000":1,"001005":1,"088000":1,"135388":1,"135378":1,"095000":1,
-      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"15388":1,"001004":1,
+      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"001004":1,
       "135389":1,"135390":1,"135391":1,"135392":1,"135393":1,"135394":1,
       "135395":1,"135396":1,"135397":1,"135398":1,"135399":1,"135400":1,
       "135363":1,"135364":1,"135365":1
@@ -32,15 +37,19 @@
       "002001":1,"002000":1,"002020":1,"0098011":1,"06000":1,"05800":1,"318008":1,
       "940000":1,"941000":1,"942000":1,"102000":1,"809000":1,"709000":1,"19598":1,
       "319011":1,"518008":1,"30900":1,"14923":1,"060000":1,"005902":1,
-      "116000":1,"123000":1,"311340":1,"208100":1
+      "116000":1,"123000":1,"311340":1,"208100":1,
+      "204000":1,"195000":1
     };
-    const RESTAR_COD = {"204000":1,"195000":1};
+    // Código que requiere consultar a Lean antes de decidir si suma.
+    // (Se quitó de SUMAR_COD para que no quede duplicado: acá manda la alerta.)
     const ALERTAR_COD = {"15388":1};
 
-    // FORMATO NUEVO: identificacion por nombre
-    // Para agregar conceptos nuevos: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
+    // ─────────────────────────────────────────────────────────────
+    //  NOMBRES DE CONCEPTOS
+    //  Para agregar uno nuevo: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
+    //  Se busca por "incluye", así que con un fragmento corto y único alcanza.
+    // ─────────────────────────────────────────────────────────────
     const NOMBRES = [
-      // SE SUMAN
       ["p.b.u", "sumar"],
       ["prestacion basica universal", "sumar"],
       ["pbu", "sumar"],
@@ -65,7 +74,6 @@
       ["reint haber renta art", "sumar"],
       ["reint haber rvp", "sumar"],
       ["haber mensual", "sumar"],
-      // NO SE SUMAN
       ["obra social s/haberes pami", "no_sumar"],
       ["desc obra social", "no_sumar"],
       ["obra social", "no_sumar"],
@@ -80,8 +88,7 @@
       ["descuento ley 24463", "no_sumar"],
       ["desc adelanto ajuste aumento", "no_sumar"],
       ["aguinaldo", "no_sumar"],
-      // SE RESTA
-      ["ajuste aumento", "restar"],
+      ["ajuste aumento", "no_sumar"],
     ];
 
     function clasificarPorNombre(desc) {
@@ -92,13 +99,22 @@
       return "desconocido";
     }
 
-    function clasificarPorCod(cod, juzgado) {
-      if (RESTAR_COD[cod]) return "restar";
-      if (ALERTAR_COD[cod]) return "alerta_especial";
+    // Clasifica usando código Y nombre. Primero intenta por código; si el
+    // código no se reconoce, intenta por nombre. Así funciona aunque el RUB
+    // traiga el monto pegado al código o pegado al concepto.
+    function clasificar(cod, desc, juzgado) {
+      // Excepciones por juzgado (máxima prioridad)
       if (cod === "005934") return juzgado === "2" ? "no_suma_excepcion" : "sumar";
       if (cod === "003900") return (juzgado === "1" || juzgado === "9") ? "no_suma_excepcion" : "sumar";
-      if (SUMAR_COD[cod]) return "sumar";
-      if (NO_SUMAR_COD[cod]) return "no_sumar";
+      if (cod) {
+        if (ALERTAR_COD[cod]) return "alerta_especial";
+        if (SUMAR_COD[cod]) return "sumar";
+        if (NO_SUMAR_COD[cod]) return "no_sumar";
+      }
+      if (desc) {
+        const porNombre = clasificarPorNombre(desc);
+        if (porNombre !== "desconocido") return porNombre;
+      }
       return "desconocido";
     }
 
@@ -110,11 +126,11 @@
 
     const MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
-    function detectarPeriodo(linea, lineaSiguiente) {
+    function detectarPeriodo(linea, sig) {
       const m1 = linea.match(/[Pp]er[ií]odo\s*[\n\r]?\s*(\d{1,2})\/(\d{4})/);
       if (m1) return m1[1].padStart(2,"0") + "/" + m1[2];
-      if (/^[Pp]er[ií]odo\s*$/.test(linea) && lineaSiguiente) {
-        const m2 = lineaSiguiente.match(/^(\d{1,2})\/(\d{4})$/);
+      if (/^[Pp]er[ií]odo\s*$/.test(linea) && sig) {
+        const m2 = sig.match(/^(\d{1,2})\/(\d{4})$/);
         if (m2) return m2[1].padStart(2,"0") + "/" + m2[2];
       }
       const m3 = linea.match(/[Ff]echa\s+[Ll]iquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -128,79 +144,80 @@
       return null;
     }
 
-    function registrarAlerta(clase, cod, desc, linea, monto, alertas, vistos) {
-      if (clase === "desconocido" && !vistos[cod]) {
-        vistos[cod] = 1;
-        alertas.push({tipo:"desconocido", cod, desc, linea, monto});
-      } else if (clase === "alerta_especial" && !vistos[cod]) {
-        vistos[cod] = 1;
-        alertas.push({tipo:"alerta_especial", cod, desc, linea, monto});
-      } else if (clase === "no_suma_excepcion" && !vistos[cod]) {
-        vistos[cod] = 1;
-        alertas.push({tipo:"excepcion_juzgado", cod, desc, linea, monto});
+    // Extrae {cod, desc, monto} de una línea, sin importar si el monto está
+    // asociado al código o al nombre del concepto. Devuelve null si la línea
+    // no tiene un monto válido.
+    function parsearLinea(l) {
+      // Buscar el ÚLTIMO monto con decimales (2 dígitos). Pedir decimales
+      // evita confundir el código (entero) con el importe.
+      const re = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}/g;
+      let m, last = null;
+      while ((m = re.exec(l)) !== null) last = m;
+
+      if (!last) {
+        // Respaldo: formato viejo "001 001 descripcion 12345" (monto sin decimales)
+        const f = l.match(/^(\d{3})\s+(\d{3})\s+(.+?)\s+([\d.,]+)\s*$/);
+        if (f) {
+          const monto = parseMonto(f[4]);
+          if (isNaN(monto)) return null;
+          return { cod: f[1] + f[2], desc: f[3].trim(), monto };
+        }
+        return null;
       }
+
+      const monto = parseMonto(last[0]);
+      const antes = l.slice(0, last.index).trim();
+
+      // Extraer código al inicio: "001 001" (separado) o "001001"/"0098011" (junto)
+      let cod = null, desc = antes;
+      let cm = antes.match(/^(\d{3})\s+(\d{3})\b\s*(.*)$/);
+      if (cm) { cod = cm[1] + cm[2]; desc = cm[3].trim(); }
+      else {
+        cm = antes.match(/^(\d{5,7})\b\s*(.*)$/);
+        if (cm) { cod = cm[1]; desc = cm[2].trim(); }
+      }
+
+      // Necesitamos al menos un código o un nombre con letras para considerarlo concepto.
+      if (!cod && (!desc || !/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(desc))) return null;
+      return { cod, desc: desc || null, monto };
     }
+
+    const SKIP_DESC = /^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|titular|cuil|beneficio|n[°º]|persona|importe|fecha|neto|bruto|liquidaci)/i;
 
     function parsearBloque(texto, juzgado) {
       const lineas = texto.split("\n");
       const items = [], alertas = [], vistos = {};
       let periodo = null;
-
       for (let i = 0; i < lineas.length; i++) {
         const l = lineas[i].trim();
         if (!l) continue;
-        if (!periodo) periodo = detectarPeriodo(l, lineas[i+1]?.trim());
+        if (!periodo) periodo = detectarPeriodo(l, lineas[i+1] ? lineas[i+1].trim() : null);
 
-        // FORMATO VIEJO: "NNN NNN descripcion monto"
-        const mcViejo = l.match(/^(\d{3})\s+(\d{3})\s+(.+?)\s+([\d.,]+)\s*$/);
-        if (mcViejo) {
-          const cod = mcViejo[1] + mcViejo[2];
-          const desc = mcViejo[3].trim();
-          const monto = parseMonto(mcViejo[4]);
-          if (isNaN(monto) || monto === 0) continue;
-          const clase = clasificarPorCod(cod, juzgado);
-          registrarAlerta(clase, cod, desc, l, monto, alertas, vistos);
-          items.push({cod, desc, monto, clase, linea:l, formato:"viejo"});
-          continue;
-        }
+        const parsed = parsearLinea(l);
+        if (!parsed) continue;
+        const { cod, desc, monto } = parsed;
+        if (isNaN(monto) || monto === 0) continue;
+        if (desc && SKIP_DESC.test(desc)) continue;
 
-        // FORMATO VIEJO alternativo: codigo pegado
-        const mcCod = l.match(/^(\d{5,8})\s+(.+?)\s+([\d.,]+)\s*$/);
-        if (mcCod) {
-          const cod = mcCod[1];
-          const desc = mcCod[2].trim();
-          const monto = parseMonto(mcCod[3]);
-          if (isNaN(monto) || monto === 0) continue;
-          const clase = clasificarPorCod(cod, juzgado);
-          registrarAlerta(clase, cod, desc, l, monto, alertas, vistos);
-          items.push({cod, desc, monto, clase, linea:l, formato:"viejo"});
-          continue;
-        }
+        const clase = clasificar(cod, desc, juzgado);
+        const key = cod || (desc ? desc.toLowerCase() : "");
 
-        // FORMATO NUEVO: "DESCRIPCION $ monto -" o "DESCRIPCION - $ monto"
-        const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*-?\s*$/) ||
-                        l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*$/);
-        if (mcNuevo) {
-          const desc = mcNuevo[1].trim();
-          if (/^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i.test(desc)) continue;
-          const montoRaw = mcNuevo[2].replace(/\./g,"").replace(",",".");
-          const monto = parseFloat(montoRaw);
-          if (isNaN(monto) || monto === 0) continue;
-          const clase = clasificarPorNombre(desc);
-          const key = desc.toLowerCase();
-          if (clase === "desconocido" && !vistos[key]) {
+        if (key && !vistos[key]) {
+          if (clase === "desconocido") {
             vistos[key] = 1;
-            alertas.push({tipo:"desconocido_nombre", desc, linea:l, monto});
-          } else if (clase === "alerta_especial" && !vistos[key]) {
+            alertas.push({ tipo: cod ? "desconocido" : "desconocido_nombre", cod, desc, linea: l, monto });
+          } else if (clase === "alerta_especial") {
             vistos[key] = 1;
-            alertas.push({tipo:"alerta_especial", desc, linea:l, monto});
+            alertas.push({ tipo: "alerta_especial", cod, desc, linea: l, monto });
+          } else if (clase === "no_suma_excepcion") {
+            vistos[key] = 1;
+            alertas.push({ tipo: "excepcion_juzgado", cod, desc, linea: l, monto });
           }
-          items.push({cod: null, desc, monto, clase, linea:l, formato:"nuevo"});
         }
+        items.push({ cod, desc, monto, clase, linea: l });
       }
-
-      const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
-      return {periodo, items, sumaTotal, alertas};
+      const sumaTotal = items.reduce((a, it) => it.clase === "sumar" ? a + it.monto : a, 0);
+      return { periodo, items, sumaTotal, alertas };
     }
 
     function dividirEnPeriodos(texto) {
@@ -218,21 +235,44 @@
       return n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
     }
 
+    // ── Exportar a CSV (lo abre Excel) ──
+    function descargarCSV(resultados, totalGeneral) {
+      const filas = [["Periodo","Codigo","Concepto","Monto","Clasificacion"]];
+      resultados.forEach(r => {
+        r.items.forEach(it => {
+          filas.push([
+            r.periodo || "",
+            it.cod || "",
+            it.desc || "",
+            it.monto.toFixed(2).replace(".", ","),
+            it.clase
+          ]);
+        });
+        filas.push([r.periodo || "", "", "SUBTOTAL (se suman)", r.sumaTotal.toFixed(2).replace(".", ","), ""]);
+      });
+      filas.push([]);
+      filas.push(["", "", "TOTAL GENERAL", totalGeneral.toFixed(2).replace(".", ","), ""]);
+      const csv = filas.map(f => f.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(";")).join("\n");
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "analisis-haberes.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     function FilaCodigos({label, items, colorFn}) {
-      if (items.length === 0) return null;
+      if (!items.length) return null;
       return (
         <div style={{marginBottom:6, fontSize:13, lineHeight:1.8}}>
           <span style={{fontWeight:700, fontSize:12, marginRight:10}}>{label}</span>
-          {items.map((it, k) => (
+          {items.map((it,k) => (
             <span key={k}>
-              <span style={{fontWeight:700, color:colorFn(it)}}>
-                {it.cod ? it.cod : it.desc}
-              </span>
-              {" "}
-              <span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>
-                {"$"+fmt(it.monto)}
-              </span>
-              {k < items.length - 1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
+              <span style={{fontWeight:700, color:colorFn(it)}}>{it.desc || it.cod}</span>
+              {it.cod && it.desc && <span style={{color:"#aaa", fontSize:11}}> ({it.cod})</span>}
+              {" "}<span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>{"$"+fmt(it.monto)}</span>
+              {k < items.length-1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
             </span>
           ))}
         </div>
@@ -242,22 +282,19 @@
     function Login({onOk}) {
       const [val, setVal] = useState("");
       const [err, setErr] = useState(false);
-      const intentar = () => {
-        if (val === PASS) onOk();
-        else { setErr(true); setVal(""); }
-      };
+      const intentar = () => { if (val===PASS) onOk(); else {setErr(true);setVal("");} };
       return (
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f4f6fb"}}>
           <div style={{background:"white",borderRadius:12,padding:40,boxShadow:"0 4px 24px rgba(0,0,0,0.10)",minWidth:320,textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>🔒</div>
             <h2 style={{marginBottom:4,color:"#1a1a2e"}}>Analizador de Recibos</h2>
-            <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contrasena para continuar</p>
-            <input type="password" placeholder="Contrasena" value={val}
+            <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contraseña para continuar</p>
+            <input type="password" placeholder="Contraseña" value={val}
               onChange={e=>{setVal(e.target.value);setErr(false);}}
               onKeyDown={e=>{if(e.key==="Enter")intentar();}}
               style={{width:"100%",padding:"10px 12px",border:"1px solid "+(err?"#e74c3c":"#ccc"),borderRadius:6,fontSize:15,marginBottom:8,outline:"none"}}
             />
-            {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>Contrasena incorrecta</div>}
+            {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>Contraseña incorrecta</div>}
             <button onClick={intentar} style={{width:"100%",padding:"10px",background:"#1a1a2e",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15}}>
               Ingresar
             </button>
@@ -271,28 +308,91 @@
       const [juzgado, setJuzgado] = useState("");
       const [texto, setTexto] = useState("");
       const [resultados, setResultados] = useState([]);
+      const [modo, setModo] = useState("pdf");
+      const [procesando, setProcesando] = useState(false);
+      const [progreso, setProgreso] = useState("");
+      const [pdfReady, setPdfReady] = useState(false);
+      const fileRef = useRef();
 
-      if (!auth) return <Login onOk={()=>setAuth(true)} />;
+      useEffect(() => {
+        if (!window.pdfjsLib) {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
+          s.onload = () => {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+            setPdfReady(true);
+          };
+          document.head.appendChild(s);
+        } else {
+          setPdfReady(true);
+        }
+      }, []);
 
-      const hint = juzgado === "2" ? "Juzgado 2: 005934 NO se suma"
-        : (juzgado === "1" || juzgado === "9") ? "Juzgado "+juzgado+": 003900 NO se suma" : "";
+      if (!auth) return React.createElement(Login, {onOk: () => setAuth(true)});
 
-      const procesar = () => {
-        if (!juzgado) { alert("Ingresa el numero de juzgado."); return; }
-        if (!texto.trim()) { alert("Pega el texto del recibo primero."); return; }
-        const bloques = dividirEnPeriodos(texto);
+      const hint = juzgado==="2" ? "Juzgado 2: 005934 NO se suma"
+        : (juzgado==="1"||juzgado==="9") ? "Juzgado "+juzgado+": 003900 NO se suma" : "";
+
+      const procesarTexto = (txt) => {
+        const bloques = dividirEnPeriodos(txt);
         const nuevos = bloques.map(b => parsearBloque(b, juzgado)).filter(r => r.items.length > 0);
-        setResultados(nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo)));
+        return nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo));
       };
 
-      const totalGeneral = resultados.reduce((a,r) => a + (r.sumaTotal||0), 0);
-      const todasAlertas = resultados.reduce((acc,r) =>
-        acc.concat((r.alertas||[]).map(a => ({...a, periodo:r.periodo}))), []);
+      const analizar = () => {
+        if (!juzgado) { alert("Ingresa el numero de juzgado."); return; }
+        if (!texto.trim()) { alert("Pega el texto primero."); return; }
+        setResultados(procesarTexto(texto));
+      };
+
+      const procesarPDF = async (file) => {
+        if (!juzgado) { alert("Ingresa el numero de juzgado primero."); return; }
+        if (!pdfReady) { alert("PDF.js todavia cargando, intenta en un segundo."); return; }
+        setProcesando(true);
+        setProgreso("Leyendo PDF...");
+        setResultados([]);
+        try {
+          const data = new Uint8Array(await file.arrayBuffer());
+          const pdf = await window.pdfjsLib.getDocument({data}).promise;
+          let textoCompleto = "";
+          for (let n = 1; n <= pdf.numPages; n++) {
+            setProgreso("Procesando pagina " + n + " de " + pdf.numPages + "...");
+            const page = await pdf.getPage(n);
+            const content = await page.getTextContent();
+            const byY = {};
+            content.items.forEach((item) => {
+              const y = Math.round(item.transform[5]);
+              if (!byY[y]) byY[y] = [];
+              byY[y].push({x: item.transform[4], str: item.str});
+            });
+            Object.keys(byY).sort((a,b) => b-a).forEach((y) => {
+              byY[y].sort((a,b) => a.x-b.x);
+              textoCompleto += byY[y].map(i => i.str).join(" ") + "\n";
+            });
+          }
+          setResultados(procesarTexto(textoCompleto));
+        } catch (err) {
+          alert("Error leyendo el PDF: " + err.message);
+        } finally {
+          setProcesando(false);
+          setProgreso("");
+        }
+      };
+
+      const onDrop = (e) => {
+        e.preventDefault();
+        const file = Array.from(e.dataTransfer.files).find(f => f.type==="application/pdf");
+        if (file) procesarPDF(file);
+      };
+
+      const limpiar = () => { setResultados([]); setTexto(""); };
+      const totalGeneral = resultados.reduce((a,r) => a+(r.sumaTotal||0), 0);
+      const todasAlertas = resultados.reduce((acc,r) => acc.concat((r.alertas||[]).map(a => Object.assign({}, a, {periodo:r.periodo}))), []);
 
       return (
         <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
-          <p style={{color:"#666", fontSize:13, marginBottom:18}}>Abri el PDF, Ctrl+A, Ctrl+C y pega abajo. Funciona con formato viejo (codigos) y nuevo (nombres).</p>
+          <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subí el PDF directamente o pegá el texto copiado.</p>
 
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
             <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
@@ -301,53 +401,107 @@
             {hint && <span style={{fontSize:12, color:"#b36a00", fontWeight:600}}>{hint}</span>}
           </div>
 
-          <textarea value={texto} onChange={e=>setTexto(e.target.value)}
-            placeholder="Pega aca el texto copiado del PDF..."
-            style={{width:"100%", minHeight:120, padding:10, border:"1px solid #ccc", borderRadius:8, fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10}}
-          />
-
-          <div style={{display:"flex", gap:10, marginBottom:20}}>
-            <button onClick={procesar} style={{padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
-              Analizar
+          <div style={{display:"flex", gap:0, marginBottom:16, borderBottom:"2px solid #dde3f0"}}>
+            <button onClick={()=>setModo("pdf")}
+              style={{padding:"8px 20px", border:"none", borderBottom: modo==="pdf" ? "2px solid #1a1a2e" : "2px solid transparent",
+                background:"none", fontWeight: modo==="pdf" ? 700 : 400, cursor:"pointer", fontSize:14, marginBottom:-2, color: modo==="pdf" ? "#1a1a2e" : "#888"}}>
+              Subir PDF
             </button>
-            {resultados.length > 0 &&
-              <button onClick={()=>{setResultados([]);setTexto("");}}
-                style={{padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14}}>
-                Limpiar
-              </button>}
+            <button onClick={()=>setModo("texto")}
+              style={{padding:"8px 20px", border:"none", borderBottom: modo==="texto" ? "2px solid #1a1a2e" : "2px solid transparent",
+                background:"none", fontWeight: modo==="texto" ? 700 : 400, cursor:"pointer", fontSize:14, marginBottom:-2, color: modo==="texto" ? "#1a1a2e" : "#888"}}>
+              Pegar texto
+            </button>
           </div>
+
+          {modo==="pdf" ? (
+            <div onDrop={onDrop} onDragOver={e=>e.preventDefault()}
+              onClick={()=>{ if(!procesando) fileRef.current.click(); }}
+              style={{border:"2px dashed #4a90d9", borderRadius:10, padding:36, textAlign:"center",
+                background: procesando ? "#f9f9f9" : "#f0f7ff", cursor: procesando ? "default" : "pointer", marginBottom:16}}>
+              <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}}
+                onChange={e=>{ if(e.target.files[0]) procesarPDF(e.target.files[0]); e.target.value=""; }}/>
+              {procesando ? (
+                <div>
+                  <div style={{fontSize:24, marginBottom:8}}>&#9203;</div>
+                  <div style={{fontWeight:600, color:"#4a90d9"}}>{progreso}</div>
+                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Esto puede tardar unos segundos...</div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{fontSize:32}}>&#128194;</div>
+                  <div style={{fontWeight:600, color:"#4a90d9", marginTop:4}}>
+                    {pdfReady ? "Hacé clic o arrastrá el PDF acá" : "Cargando lector de PDF..."}
+                  </div>
+                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Soporta PDFs de cualquier tamaño</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <textarea value={texto} onChange={e=>setTexto(e.target.value)}
+                placeholder="Pegá acá el texto copiado del PDF (Ctrl+A, Ctrl+C en el PDF)..."
+                style={{width:"100%", minHeight:120, padding:10, border:"1px solid #ccc", borderRadius:8,
+                  fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10}}/>
+              <div style={{display:"flex", gap:10, marginBottom:16}}>
+                <button onClick={analizar}
+                  style={{padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
+                  Analizar
+                </button>
+                {resultados.length > 0 &&
+                  <button onClick={limpiar}
+                    style={{padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:14}}>
+                    Limpiar
+                  </button>}
+              </div>
+            </div>
+          )}
+
+          {resultados.length > 0 && (
+            <div style={{display:"flex", gap:10, marginBottom:16, flexWrap:"wrap"}}>
+              <button onClick={()=>descargarCSV(resultados, totalGeneral)}
+                style={{padding:"8px 18px", background:"#1a6e2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:13}}>
+                Descargar Excel (CSV)
+              </button>
+              {modo==="pdf" &&
+                <button onClick={limpiar}
+                  style={{padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:13}}>
+                  Limpiar resultados
+                </button>}
+            </div>
+          )}
 
           {todasAlertas.length > 0 && (
             <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
-              <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
+              <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revisión manual:</strong>
               {todasAlertas.map((a,i) => (
                 <div key={i} style={{fontSize:13, marginBottom:4, padding:"4px 0", borderBottom:"1px solid #fde8a0"}}>
-                  <strong>{a.periodo}</strong> —{" "}
-                  {a.tipo === "desconocido" && <span>Codigo <strong>{a.cod}</strong> no reconocido</span>}
-                  {a.tipo === "desconocido_nombre" && <span>Concepto "<strong>{a.desc}</strong>" no reconocido — revisar si se suma (${fmt(a.monto)})</span>}
-                  {a.tipo === "alerta_especial" && <span>Codigo <strong>{a.cod}</strong> — consultar a Lean</span>}
-                  {a.tipo === "excepcion_juzgado" && <span>Codigo <strong>{a.cod}</strong> no suma en este juzgado</span>}
+                  <strong>{a.periodo}</strong> &#8212;{" "}
+                  {a.tipo==="desconocido" && ("Codigo " + a.cod + " no reconocido (\"" + (a.desc||"") + "\") - revisar si se suma ($" + fmt(a.monto) + ")")}
+                  {a.tipo==="desconocido_nombre" && ("Concepto \"" + a.desc + "\" no reconocido - revisar si se suma ($" + fmt(a.monto) + ")")}
+                  {a.tipo==="alerta_especial" && ("Codigo " + a.cod + " - consultar a Lean ($" + fmt(a.monto) + ")")}
+                  {a.tipo==="excepcion_juzgado" && ("Codigo " + a.cod + " no suma en este juzgado")}
                 </div>
               ))}
             </div>
           )}
 
           {resultados.map((r,i) => {
-            const sumados = r.items.filter(it => it.clase === "sumar");
-            const noSumados = r.items.filter(it => it.clase !== "sumar");
+            const sumados = r.items.filter(it => it.clase==="sumar");
+            const noSumados = r.items.filter(it => it.clase!=="sumar");
             return (
               <div key={i} style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
                 <div style={{background:"#1a1a2e", color:"white", padding:"8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6}}>
                   <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
                   <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
                   {r.alertas && r.alertas.length > 0
-                    ? <span style={{background:"#e67e22", borderRadius:4, padding:"1px 8px", fontSize:12, fontWeight:700}}>{r.alertas.length} alerta{r.alertas.length>1?"s":""}</span>
+                    ? <span style={{background:"#e67e22", borderRadius:4, padding:"1px 8px", fontSize:12, fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
                     : <span style={{background:"#1a6e2e", borderRadius:4, padding:"1px 8px", fontSize:12}}>OK</span>}
                 </div>
                 <div style={{padding:"10px 14px", background:"white"}}>
-                  <FilaCodigos label="SE SUMAN:" items={sumados} colorFn={()=>"#1a6e2e"} />
-                  <FilaCodigos label="NO SE SUMAN:" items={noSumados}
-                    colorFn={(it) => it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"} />
+                  {React.createElement(FilaCodigos, {label:"SE SUMAN:", items:sumados, colorFn:()=>"#1a6e2e"})}
+                  {React.createElement(FilaCodigos, {label:"NO SE SUMAN:", items:noSumados,
+                    colorFn:(it) => it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"})}
                 </div>
               </div>
             );
@@ -364,7 +518,7 @@
     }
 
     const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
+    root.render(React.createElement(App));
   </script>
 </body>
 </html>
