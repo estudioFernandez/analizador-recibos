@@ -6,7 +6,7 @@
   <title>Analizador de Recibos de Haberes</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #f4f6fb; }
@@ -19,16 +19,11 @@
 
     const PASS = "Estudio2006";
 
-    // ─────────────────────────────────────────────────────────────
-    //  CÓDIGOS
-    //  Para agregar un código nuevo: ponelo en la lista que corresponda.
-    //  IMPORTANTE: un mismo código NO debe estar en dos listas a la vez.
-    // ─────────────────────────────────────────────────────────────
     const SUMAR_COD = {
       "001001":1,"001002":1,"001003":1,"022022":1,"005934":1,"005915":1,"001111":1,
       "930000":1,"931000":1,"932000":1,"001022":1,"001014":1,"0022011":1,"001020":1,
       "0022022":1,"001000":1,"001005":1,"088000":1,"135388":1,"135378":1,"095000":1,
-      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"001004":1,
+      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"15388":1,"001004":1,
       "135389":1,"135390":1,"135391":1,"135392":1,"135393":1,"135394":1,
       "135395":1,"135396":1,"135397":1,"135398":1,"135399":1,"135400":1,
       "135363":1,"135364":1,"135365":1
@@ -37,18 +32,12 @@
       "002001":1,"002000":1,"002020":1,"0098011":1,"06000":1,"05800":1,"318008":1,
       "940000":1,"941000":1,"942000":1,"102000":1,"809000":1,"709000":1,"19598":1,
       "319011":1,"518008":1,"30900":1,"14923":1,"060000":1,"005902":1,
-      "116000":1,"123000":1,"311340":1,"208100":1,
-      "204000":1,"195000":1
+      "116000":1,"123000":1,"311340":1,"208100":1
     };
-    // Código que requiere consultar a Lean antes de decidir si suma.
-    // (Se quitó de SUMAR_COD para que no quede duplicado: acá manda la alerta.)
+    const RESTAR_COD = {"204000":1,"195000":1};
     const ALERTAR_COD = {"15388":1};
 
-    // ─────────────────────────────────────────────────────────────
-    //  NOMBRES DE CONCEPTOS
-    //  Para agregar uno nuevo: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
-    //  Se busca por "incluye", así que con un fragmento corto y único alcanza.
-    // ─────────────────────────────────────────────────────────────
+    // Para agregar conceptos nuevos: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
     const NOMBRES = [
       ["p.b.u", "sumar"],
       ["prestacion basica universal", "sumar"],
@@ -74,6 +63,7 @@
       ["reint haber renta art", "sumar"],
       ["reint haber rvp", "sumar"],
       ["haber mensual", "sumar"],
+      ["bono extraordinario previsional", "sumar"],
       ["obra social s/haberes pami", "no_sumar"],
       ["desc obra social", "no_sumar"],
       ["obra social", "no_sumar"],
@@ -88,7 +78,7 @@
       ["descuento ley 24463", "no_sumar"],
       ["desc adelanto ajuste aumento", "no_sumar"],
       ["aguinaldo", "no_sumar"],
-      ["ajuste aumento", "no_sumar"],
+      ["ajuste aumento", "restar"],
     ];
 
     function clasificarPorNombre(desc) {
@@ -99,22 +89,13 @@
       return "desconocido";
     }
 
-    // Clasifica usando código Y nombre. Primero intenta por código; si el
-    // código no se reconoce, intenta por nombre. Así funciona aunque el RUB
-    // traiga el monto pegado al código o pegado al concepto.
-    function clasificar(cod, desc, juzgado) {
-      // Excepciones por juzgado (máxima prioridad)
+    function clasificarPorCod(cod, juzgado) {
+      if (RESTAR_COD[cod]) return "restar";
+      if (ALERTAR_COD[cod]) return "alerta_especial";
       if (cod === "005934") return juzgado === "2" ? "no_suma_excepcion" : "sumar";
       if (cod === "003900") return (juzgado === "1" || juzgado === "9") ? "no_suma_excepcion" : "sumar";
-      if (cod) {
-        if (ALERTAR_COD[cod]) return "alerta_especial";
-        if (SUMAR_COD[cod]) return "sumar";
-        if (NO_SUMAR_COD[cod]) return "no_sumar";
-      }
-      if (desc) {
-        const porNombre = clasificarPorNombre(desc);
-        if (porNombre !== "desconocido") return porNombre;
-      }
+      if (SUMAR_COD[cod]) return "sumar";
+      if (NO_SUMAR_COD[cod]) return "no_sumar";
       return "desconocido";
     }
 
@@ -144,46 +125,6 @@
       return null;
     }
 
-    // Extrae {cod, desc, monto} de una línea, sin importar si el monto está
-    // asociado al código o al nombre del concepto. Devuelve null si la línea
-    // no tiene un monto válido.
-    function parsearLinea(l) {
-      // Buscar el ÚLTIMO monto con decimales (2 dígitos). Pedir decimales
-      // evita confundir el código (entero) con el importe.
-      const re = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}/g;
-      let m, last = null;
-      while ((m = re.exec(l)) !== null) last = m;
-
-      if (!last) {
-        // Respaldo: formato viejo "001 001 descripcion 12345" (monto sin decimales)
-        const f = l.match(/^(\d{3})\s+(\d{3})\s+(.+?)\s+([\d.,]+)\s*$/);
-        if (f) {
-          const monto = parseMonto(f[4]);
-          if (isNaN(monto)) return null;
-          return { cod: f[1] + f[2], desc: f[3].trim(), monto };
-        }
-        return null;
-      }
-
-      const monto = parseMonto(last[0]);
-      const antes = l.slice(0, last.index).trim();
-
-      // Extraer código al inicio: "001 001" (separado) o "001001"/"0098011" (junto)
-      let cod = null, desc = antes;
-      let cm = antes.match(/^(\d{3})\s+(\d{3})\b\s*(.*)$/);
-      if (cm) { cod = cm[1] + cm[2]; desc = cm[3].trim(); }
-      else {
-        cm = antes.match(/^(\d{5,7})\b\s*(.*)$/);
-        if (cm) { cod = cm[1]; desc = cm[2].trim(); }
-      }
-
-      // Necesitamos al menos un código o un nombre con letras para considerarlo concepto.
-      if (!cod && (!desc || !/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(desc))) return null;
-      return { cod, desc: desc || null, monto };
-    }
-
-    const SKIP_DESC = /^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|titular|cuil|beneficio|n[°º]|persona|importe|fecha|neto|bruto|liquidaci)/i;
-
     function parsearBloque(texto, juzgado) {
       const lineas = texto.split("\n");
       const items = [], alertas = [], vistos = {};
@@ -192,32 +133,33 @@
         const l = lineas[i].trim();
         if (!l) continue;
         if (!periodo) periodo = detectarPeriodo(l, lineas[i+1] ? lineas[i+1].trim() : null);
-
-        const parsed = parsearLinea(l);
-        if (!parsed) continue;
-        const { cod, desc, monto } = parsed;
-        if (isNaN(monto) || monto === 0) continue;
-        if (desc && SKIP_DESC.test(desc)) continue;
-
-        const clase = clasificar(cod, desc, juzgado);
-        const key = cod || (desc ? desc.toLowerCase() : "");
-
-        if (key && !vistos[key]) {
-          if (clase === "desconocido") {
-            vistos[key] = 1;
-            alertas.push({ tipo: cod ? "desconocido" : "desconocido_nombre", cod, desc, linea: l, monto });
-          } else if (clase === "alerta_especial") {
-            vistos[key] = 1;
-            alertas.push({ tipo: "alerta_especial", cod, desc, linea: l, monto });
-          } else if (clase === "no_suma_excepcion") {
-            vistos[key] = 1;
-            alertas.push({ tipo: "excepcion_juzgado", cod, desc, linea: l, monto });
-          }
+        const mcViejo = l.match(/^(\d{3})\s+(\d{3})\s+(.+?)\s+([\d.,]+)\s*$/);
+        if (mcViejo) {
+          const cod = mcViejo[1] + mcViejo[2];
+          const monto = parseMonto(mcViejo[4]);
+          if (isNaN(monto) || monto === 0) continue;
+          const clase = clasificarPorCod(cod, juzgado);
+          if (clase === "desconocido" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"desconocido", cod, linea:l, monto}); }
+          else if (clase === "alerta_especial" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"alerta_especial", cod, linea:l, monto}); }
+          else if (clase === "no_suma_excepcion" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"excepcion_juzgado", cod, linea:l, monto}); }
+          items.push({cod, desc: mcViejo[3], monto, clase, linea:l});
+          continue;
         }
-        items.push({ cod, desc, monto, clase, linea: l });
+        const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*-?\s*$/) ||
+                        l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*$/);
+        if (mcNuevo) {
+          const desc = mcNuevo[1].trim();
+          if (/^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i.test(desc)) continue;
+          const monto = parseFloat(mcNuevo[2].replace(/\./g,"").replace(",","."));
+          if (isNaN(monto) || monto === 0) continue;
+          const clase = clasificarPorNombre(desc);
+          const key = desc.toLowerCase();
+          if (clase === "desconocido" && !vistos[key]) { vistos[key]=1; alertas.push({tipo:"desconocido_nombre", desc, linea:l, monto}); }
+          items.push({cod: null, desc, monto, clase, linea:l});
+        }
       }
-      const sumaTotal = items.reduce((a, it) => it.clase === "sumar" ? a + it.monto : a, 0);
-      return { periodo, items, sumaTotal, alertas };
+      const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
+      return {periodo, items, sumaTotal, alertas};
     }
 
     function dividirEnPeriodos(texto) {
@@ -235,33 +177,6 @@
       return n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
     }
 
-    // ── Exportar a CSV (lo abre Excel) ──
-    function descargarCSV(resultados, totalGeneral) {
-      const filas = [["Periodo","Codigo","Concepto","Monto","Clasificacion"]];
-      resultados.forEach(r => {
-        r.items.forEach(it => {
-          filas.push([
-            r.periodo || "",
-            it.cod || "",
-            it.desc || "",
-            it.monto.toFixed(2).replace(".", ","),
-            it.clase
-          ]);
-        });
-        filas.push([r.periodo || "", "", "SUBTOTAL (se suman)", r.sumaTotal.toFixed(2).replace(".", ","), ""]);
-      });
-      filas.push([]);
-      filas.push(["", "", "TOTAL GENERAL", totalGeneral.toFixed(2).replace(".", ","), ""]);
-      const csv = filas.map(f => f.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(";")).join("\n");
-      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "analisis-haberes.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
     function FilaCodigos({label, items, colorFn}) {
       if (!items.length) return null;
       return (
@@ -269,8 +184,7 @@
           <span style={{fontWeight:700, fontSize:12, marginRight:10}}>{label}</span>
           {items.map((it,k) => (
             <span key={k}>
-              <span style={{fontWeight:700, color:colorFn(it)}}>{it.desc || it.cod}</span>
-              {it.cod && it.desc && <span style={{color:"#aaa", fontSize:11}}> ({it.cod})</span>}
+              <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod || it.desc}</span>
               {" "}<span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>{"$"+fmt(it.monto)}</span>
               {k < items.length-1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
             </span>
@@ -288,13 +202,13 @@
           <div style={{background:"white",borderRadius:12,padding:40,boxShadow:"0 4px 24px rgba(0,0,0,0.10)",minWidth:320,textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>🔒</div>
             <h2 style={{marginBottom:4,color:"#1a1a2e"}}>Analizador de Recibos</h2>
-            <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contraseña para continuar</p>
-            <input type="password" placeholder="Contraseña" value={val}
+            <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contrasena para continuar</p>
+            <input type="password" placeholder="Contrasena" value={val}
               onChange={e=>{setVal(e.target.value);setErr(false);}}
               onKeyDown={e=>{if(e.key==="Enter")intentar();}}
               style={{width:"100%",padding:"10px 12px",border:"1px solid "+(err?"#e74c3c":"#ccc"),borderRadius:6,fontSize:15,marginBottom:8,outline:"none"}}
             />
-            {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>Contraseña incorrecta</div>}
+            {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>Contrasena incorrecta</div>}
             <button onClick={intentar} style={{width:"100%",padding:"10px",background:"#1a1a2e",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15}}>
               Ingresar
             </button>
@@ -345,38 +259,50 @@
         setResultados(procesarTexto(texto));
       };
 
-      const procesarPDF = async (file) => {
+      const procesarPDF = (file) => {
         if (!juzgado) { alert("Ingresa el numero de juzgado primero."); return; }
         if (!pdfReady) { alert("PDF.js todavia cargando, intenta en un segundo."); return; }
         setProcesando(true);
         setProgreso("Leyendo PDF...");
         setResultados([]);
-        try {
-          const data = new Uint8Array(await file.arrayBuffer());
-          const pdf = await window.pdfjsLib.getDocument({data}).promise;
-          let textoCompleto = "";
-          for (let n = 1; n <= pdf.numPages; n++) {
-            setProgreso("Procesando pagina " + n + " de " + pdf.numPages + "...");
-            const page = await pdf.getPage(n);
-            const content = await page.getTextContent();
-            const byY = {};
-            content.items.forEach((item) => {
-              const y = Math.round(item.transform[5]);
-              if (!byY[y]) byY[y] = [];
-              byY[y].push({x: item.transform[4], str: item.str});
-            });
-            Object.keys(byY).sort((a,b) => b-a).forEach((y) => {
-              byY[y].sort((a,b) => a.x-b.x);
-              textoCompleto += byY[y].map(i => i.str).join(" ") + "\n";
-            });
-          }
-          setResultados(procesarTexto(textoCompleto));
-        } catch (err) {
-          alert("Error leyendo el PDF: " + err.message);
-        } finally {
-          setProcesando(false);
-          setProgreso("");
-        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const data = new Uint8Array(e.target.result);
+          window.pdfjsLib.getDocument({data}).promise.then((pdf) => {
+            const total = pdf.numPages;
+            let textoCompleto = "";
+            const procesarPagina = (n) => {
+              if (n > total) {
+                setProcesando(false);
+                setProgreso("");
+                setResultados(procesarTexto(textoCompleto));
+                return;
+              }
+              setProgreso("Procesando pagina " + n + " de " + total + "...");
+              pdf.getPage(n).then((page) => {
+                page.getTextContent().then((content) => {
+                  const byY = {};
+                  content.items.forEach((item) => {
+                    const y = Math.round(item.transform[5]);
+                    if (!byY[y]) byY[y] = [];
+                    byY[y].push({x: item.transform[4], str: item.str});
+                  });
+                  Object.keys(byY).sort((a,b) => b-a).forEach((y) => {
+                    byY[y].sort((a,b) => a.x-b.x);
+                    textoCompleto += byY[y].map(i => i.str).join(" ") + "\n";
+                  });
+                  setTimeout(() => procesarPagina(n+1), 0);
+                });
+              });
+            };
+            procesarPagina(1);
+          }).catch((err) => {
+            setProcesando(false);
+            setProgreso("");
+            alert("Error leyendo el PDF: " + err.message);
+          });
+        };
+        reader.readAsArrayBuffer(file);
       };
 
       const onDrop = (e) => {
@@ -392,7 +318,7 @@
       return (
         <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
-          <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subí el PDF directamente o pegá el texto copiado.</p>
+          <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subi el PDF directamente o pega el texto copiado.</p>
 
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
             <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
@@ -431,16 +357,16 @@
                 <div>
                   <div style={{fontSize:32}}>&#128194;</div>
                   <div style={{fontWeight:600, color:"#4a90d9", marginTop:4}}>
-                    {pdfReady ? "Hacé clic o arrastrá el PDF acá" : "Cargando lector de PDF..."}
+                    {pdfReady ? "Hace clic o arrastra el PDF aca" : "Cargando lector de PDF..."}
                   </div>
-                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Soporta PDFs de cualquier tamaño</div>
+                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Soporta PDFs de cualquier tamano</div>
                 </div>
               )}
             </div>
           ) : (
             <div>
               <textarea value={texto} onChange={e=>setTexto(e.target.value)}
-                placeholder="Pegá acá el texto copiado del PDF (Ctrl+A, Ctrl+C en el PDF)..."
+                placeholder="Pega aca el texto copiado del PDF (Ctrl+A, Ctrl+C en el PDF)..."
                 style={{width:"100%", minHeight:120, padding:10, border:"1px solid #ccc", borderRadius:8,
                   fontSize:12, fontFamily:"monospace", resize:"vertical", marginBottom:10}}/>
               <div style={{display:"flex", gap:10, marginBottom:16}}>
@@ -457,29 +383,22 @@
             </div>
           )}
 
-          {resultados.length > 0 && (
-            <div style={{display:"flex", gap:10, marginBottom:16, flexWrap:"wrap"}}>
-              <button onClick={()=>descargarCSV(resultados, totalGeneral)}
-                style={{padding:"8px 18px", background:"#1a6e2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:13}}>
-                Descargar Excel (CSV)
-              </button>
-              {modo==="pdf" &&
-                <button onClick={limpiar}
-                  style={{padding:"8px 18px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:13}}>
-                  Limpiar resultados
-                </button>}
-            </div>
+          {modo==="pdf" && resultados.length > 0 && (
+            <button onClick={limpiar}
+              style={{padding:"6px 16px", background:"#c0392b", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:600, fontSize:13, marginBottom:16}}>
+              Limpiar resultados
+            </button>
           )}
 
           {todasAlertas.length > 0 && (
             <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
-              <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revisión manual:</strong>
+              <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
               {todasAlertas.map((a,i) => (
                 <div key={i} style={{fontSize:13, marginBottom:4, padding:"4px 0", borderBottom:"1px solid #fde8a0"}}>
                   <strong>{a.periodo}</strong> &#8212;{" "}
-                  {a.tipo==="desconocido" && ("Codigo " + a.cod + " no reconocido (\"" + (a.desc||"") + "\") - revisar si se suma ($" + fmt(a.monto) + ")")}
+                  {a.tipo==="desconocido" && ("Codigo " + a.cod + " no reconocido")}
                   {a.tipo==="desconocido_nombre" && ("Concepto \"" + a.desc + "\" no reconocido - revisar si se suma ($" + fmt(a.monto) + ")")}
-                  {a.tipo==="alerta_especial" && ("Codigo " + a.cod + " - consultar a Lean ($" + fmt(a.monto) + ")")}
+                  {a.tipo==="alerta_especial" && ("Codigo " + a.cod + " - consultar a Lean")}
                   {a.tipo==="excepcion_juzgado" && ("Codigo " + a.cod + " no suma en este juzgado")}
                 </div>
               ))}
