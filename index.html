@@ -200,7 +200,7 @@
       return (
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f4f6fb"}}>
           <div style={{background:"white",borderRadius:12,padding:40,boxShadow:"0 4px 24px rgba(0,0,0,0.10)",minWidth:320,textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:8}}>🔒</div>
+            <div style={{fontSize:36,marginBottom:8}}>&#128274;</div>
             <h2 style={{marginBottom:4,color:"#1a1a2e"}}>Analizador de Recibos</h2>
             <p style={{color:"#666",fontSize:13,marginBottom:24}}>Ingresa la contrasena para continuar</p>
             <input type="password" placeholder="Contrasena" value={val}
@@ -220,6 +220,7 @@
     function App() {
       const [auth, setAuth] = useState(false);
       const [juzgado, setJuzgado] = useState("");
+      const [titular, setTitular] = useState("");
       const [texto, setTexto] = useState("");
       const [resultados, setResultados] = useState([]);
       const [modo, setModo] = useState("pdf");
@@ -320,10 +321,17 @@
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
           <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subi el PDF directamente o pega el texto copiado.</p>
 
-          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
-            <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
-            <input value={juzgado} onChange={e=>setJuzgado(e.target.value)} placeholder="ej: 7"
-              style={{width:80, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:15}}/>
+          <div style={{display:"flex", alignItems:"center", gap:16, marginBottom:14, flexWrap:"wrap"}}>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <label style={{fontWeight:600, fontSize:14}}>Juzgado N:</label>
+              <input value={juzgado} onChange={e=>setJuzgado(e.target.value)} placeholder="ej: 7"
+                style={{width:80, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:15}}/>
+            </div>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <label style={{fontWeight:600, fontSize:14}}>Titular:</label>
+              <input value={titular} onChange={e=>setTitular(e.target.value)} placeholder="Nombre del titular"
+                style={{width:220, padding:"6px 10px", border:"1px solid #ccc", borderRadius:6, fontSize:14}}/>
+            </div>
             {hint && <span style={{fontSize:12, color:"#b36a00", fontWeight:600}}>{hint}</span>}
           </div>
 
@@ -411,7 +419,10 @@
             return (
               <div key={i} style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
                 <div style={{background:"#1a1a2e", color:"white", padding:"8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6}}>
-                  <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
+                  <div style={{display:"flex", flexDirection:"column", gap:2}}>
+                    <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
+                    {titular && <span style={{fontSize:12, color:"#a0c4ff", fontWeight:500}}>{titular}</span>}
+                  </div>
                   <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
                   {r.alertas && r.alertas.length > 0
                     ? <span style={{background:"#e67e22", borderRadius:4, padding:"1px 8px", fontSize:12, fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
