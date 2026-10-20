@@ -36,6 +36,8 @@
     };
     const RESTAR_COD = {"204000":1,"195000":1};
     const ALERTAR_COD = {"15388":1};
+    // Capital e intereses: cobro de retroactivo (embargo o liquidacion de ANSES). No suman, solo se senalan.
+    const RETROACTIVO_COD = {"116000":1,"123000":1};
 
     // Para agregar conceptos nuevos: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
     const NOMBRES = [
@@ -160,7 +162,8 @@
         }
       }
       const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
-      return {periodo, items, sumaTotal, alertas};
+      const retroactivos = items.filter(it => it.cod && RETROACTIVO_COD[it.cod]);
+      return {periodo, items, sumaTotal, alertas, retroactivos};
     }
 
     function dividirEnPeriodos(texto) {
@@ -423,6 +426,11 @@
                   <div style={{display:"flex", flexDirection:"column", gap:2}}>
                     <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
                     {titular && <span style={{fontSize:12, color:"#a0c4ff", fontWeight:500}}>{titular}</span>}
+                    {r.retroactivos.length > 0 && (
+                      <span style={{background:"#8e44ad", borderRadius:4, padding:"2px 8px", fontSize:12, fontWeight:700, alignSelf:"flex-start"}}>
+                        {"⚠ COBRO RETROACTIVO / INTERESES: " + r.retroactivos.map(it => it.cod + " $" + fmt(it.monto)).join(" | ")}
+                      </span>
+                    )}
                   </div>
                   <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
                   {r.alertas && r.alertas.length > 0
@@ -432,7 +440,7 @@
                 <div style={{padding:"10px 14px", background:"white"}}>
                   {React.createElement(FilaCodigos, {label:"SE SUMAN:", items:sumados, colorFn:()=>"#1a6e2e"})}
                   {React.createElement(FilaCodigos, {label:"NO SE SUMAN:", items:noSumados,
-                    colorFn:(it) => it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"})}
+                    colorFn:(it) => RETROACTIVO_COD[it.cod]?"#8e44ad": it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"})}
                 </div>
               </div>
             );
