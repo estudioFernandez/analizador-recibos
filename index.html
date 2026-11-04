@@ -10,6 +10,17 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #f4f6fb; }
+    /* Impresion / PDF: .no-print se oculta al imprimir, .solo-print aparece solo al imprimir */
+    .solo-print { display: none; }
+    @page { margin: 12mm; }
+    @media print {
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { background: white; }
+      #root > div { padding: 0 !important; max-width: none !important; }
+      .no-print { display: none !important; }
+      .solo-print { display: block !important; }
+      .no-cortar { break-inside: avoid; page-break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
@@ -319,9 +330,19 @@
       const limpiar = () => { setResultados([]); setTexto(""); };
       const totalGeneral = resultados.reduce((a,r) => a+(r.sumaTotal||0), 0);
       const todasAlertas = resultados.reduce((acc,r) => acc.concat((r.alertas||[]).map(a => Object.assign({}, a, {periodo:r.periodo}))), []);
+      const periodos = resultados.map(r => r.periodo).filter(Boolean);
+
+      // El titulo de la pagina es el nombre que el navegador sugiere al guardar como PDF.
+      const imprimir = () => {
+        const tituloOriginal = document.title;
+        document.title = "Recibos" + (titular.trim() ? " - " + titular.trim() : "") + " - Juzgado " + juzgado;
+        window.addEventListener("afterprint", () => { document.title = tituloOriginal; }, {once:true});
+        window.print();
+      };
 
       return (
         <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
+          <div className="no-print">
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
           <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subi el PDF directamente o pega el texto copiado.</p>
 
@@ -402,6 +423,29 @@
             </button>
           )}
 
+          {resultados.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <button onClick={imprimir}
+                style={{padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
+                Imprimir / Guardar PDF
+              </button>
+              <span style={{fontSize:12, color:"#888", marginLeft:10}}>Para exportar, elegi "Guardar como PDF" como impresora.</span>
+            </div>
+          )}
+          </div>
+
+          {resultados.length > 0 && (
+            <div className="solo-print" style={{marginBottom:14, paddingBottom:10, borderBottom:"2px solid #1a1a2e"}}>
+              <div style={{fontWeight:700, fontSize:18, marginBottom:4}}>Analisis de Recibos de Haberes</div>
+              <div style={{fontSize:13, lineHeight:1.6}}>
+                {titular.trim() && <span><strong>Titular:</strong> {titular.trim()}<span style={{color:"#ccc", margin:"0 10px"}}>|</span></span>}
+                <strong>Juzgado N:</strong> {juzgado}
+                {periodos.length > 0 && <span><span style={{color:"#ccc", margin:"0 10px"}}>|</span><strong>Periodos:</strong> {periodos[0] + " a " + periodos[periodos.length-1] + " (" + periodos.length + ")"}</span>}
+                <span style={{color:"#ccc", margin:"0 10px"}}>|</span><strong>Emitido:</strong> {new Date().toLocaleDateString("es-AR")}
+              </div>
+            </div>
+          )}
+
           {todasAlertas.length > 0 && (
             <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
               <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
@@ -421,7 +465,7 @@
             const sumados = r.items.filter(it => it.clase==="sumar");
             const noSumados = r.items.filter(it => it.clase!=="sumar");
             return (
-              <div key={i} style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
+              <div key={i} className="no-cortar" style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
                 <div style={{background:"#1a1a2e", color:"white", padding:"8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6}}>
                   <div style={{display:"flex", flexDirection:"column", gap:2}}>
                     <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
@@ -447,7 +491,7 @@
           })}
 
           {resultados.length > 0 && (
-            <div style={{background:"#1a1a2e", color:"white", fontWeight:700, padding:"12px 16px", borderRadius:8, display:"flex", justifyContent:"space-between", fontSize:15}}>
+            <div className="no-cortar" style={{background:"#1a1a2e", color:"white", fontWeight:700, padding:"12px 16px", borderRadius:8, display:"flex", justifyContent:"space-between", fontSize:15}}>
               <span>TOTAL GENERAL</span>
               <span>{"$"+fmt(totalGeneral)}</span>
             </div>
