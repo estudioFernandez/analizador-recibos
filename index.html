@@ -95,6 +95,25 @@
       ["ajuste aumento", "restar"],
     ];
 
+    // Algunos recibos de ANSES traen solo el nombre del concepto. Esta tabla completa el codigo
+    // SOLO PARA MOSTRARLO: no cambia la clasificacion ni los totales.
+    // Sale de recibos reales que traen los dos datos. Si un concepto no esta, se muestra sin codigo.
+    // Para agregar uno: "NOMBRE EXACTO DEL RECIBO, EN MAYUSCULAS": "codigo de 6 digitos"
+    const CODIGO_POR_NOMBRE = {
+      "PBU-HABER MENSUAL": "001001",
+      "PC-HABER MENSUAL": "001002",
+      "PAP-HABER MENSUAL": "001003",
+      "PFB-HABER MENSUAL": "001005",
+      "PBU SENT JUDICIAL": "001111",
+      "RETROAC SEN/JUDICIAL": "116000",
+      "INTERESES SENT JUDIC": "123000",
+      "DESC LEY 24463 ART 9": "204000",
+      "TOPE POR ACUMULACION": "208100",
+      "CREDITO ANSES-SIPA": "311340",
+      "O.S. PAMI MENSUAL": "318008",
+      "DESC OBRA SOCIAL": "518008",
+    };
+
     function clasificarPorNombre(desc) {
       const d = desc.toLowerCase();
       for (const [frag, accion] of NOMBRES) {
@@ -156,20 +175,20 @@
           if (clase === "desconocido" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"desconocido", cod, linea:l, monto}); }
           else if (clase === "alerta_especial" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"alerta_especial", cod, linea:l, monto}); }
           else if (clase === "no_suma_excepcion" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"excepcion_juzgado", cod, linea:l, monto}); }
-          items.push({cod, desc: mcViejo[3], monto, clase, linea:l});
+          items.push({cod, desc: mcViejo[3].replace(/[\s$-]+$/, ""), monto, clase, linea:l});
           continue;
         }
         const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*-?\s*$/) ||
                         l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*$/);
         if (mcNuevo) {
-          const desc = mcNuevo[1].trim();
+          const desc = mcNuevo[1].replace(/[\s$-]+$/, "");
           if (/^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i.test(desc)) continue;
           const monto = parseFloat(mcNuevo[2].replace(/\./g,"").replace(",","."));
           if (isNaN(monto) || monto === 0) continue;
           const clase = clasificarPorNombre(desc);
           const key = desc.toLowerCase();
           if (clase === "desconocido" && !vistos[key]) { vistos[key]=1; alertas.push({tipo:"desconocido_nombre", desc, linea:l, monto}); }
-          items.push({cod: null, desc, monto, clase, linea:l});
+          items.push({cod: null, codMostrado: CODIGO_POR_NOMBRE[desc.toUpperCase()] || null, desc, monto, clase, linea:l});
         }
       }
       const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
@@ -199,8 +218,8 @@
           <span style={{fontWeight:700, fontSize:12, marginRight:10}}>{label}</span>
           {items.map((it,k) => (
             <span key={k}>
-              <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod || it.desc}</span>
-              {it.cod && it.desc && <span style={{color:colorFn(it)}}>{" " + it.desc}</span>}
+              <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod || it.codMostrado || it.desc}</span>
+              {(it.cod || it.codMostrado) && it.desc && <span style={{color:colorFn(it)}}>{" " + it.desc}</span>}
               {" "}<span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>{"$"+fmt(it.monto)}</span>
               {k < items.length-1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
             </span>
