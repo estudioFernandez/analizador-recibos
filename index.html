@@ -200,6 +200,7 @@
           {items.map((it,k) => (
             <span key={k}>
               <span style={{fontWeight:700, color:colorFn(it)}}>{it.cod || it.desc}</span>
+              {it.cod && it.desc && <span style={{color:colorFn(it)}}>{" " + it.desc}</span>}
               {" "}<span style={{color:colorFn(it)==="#1a6e2e"?"#1a6e2e":"#888", fontWeight:colorFn(it)==="#1a6e2e"?600:400}}>{"$"+fmt(it.monto)}</span>
               {k < items.length-1 && <span style={{color:"#ccc", margin:"0 10px"}}>|</span>}
             </span>
