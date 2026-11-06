@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pruebas del Analizador</title>
+  <!--
+    Como se usa: abrir este archivo con doble clic y elegir el index.html que se quiere probar
+    (el de la carpeta de arriba, o uno nuevo antes de subirlo a GitHub). Si algo sale en rojo, no publicar.
+
+    Recibos reales: crear en esta carpeta un archivo casos-reales.js con
+        const CASOS_REALES = [ { nombre: "...", texto: "...", totales: [["MM/AAAA", 123456.78]] } ];
+    con el mismo formato que casos.js. El texto se copia del PDF (Ctrl+A, Ctrl+C), como en "Pegar texto".
+    casos-reales.js esta en .gitignore: no se sube a GitHub ni se publica.
+  -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f4f6fb; font-family: system-ui, sans-serif; color: #1a1a2e; }
+    .pag { max-width: 960px; margin: 0 auto; padding: 20px; }
+    h2 { margin-bottom: 4px; }
+    .ayuda { color: #666; font-size: 13px; margin-bottom: 16px; }
+    .zona { border: 2px dashed #4a90d9; border-radius: 10px; padding: 28px; text-align: center; background: #f0f7ff; cursor: pointer; margin-bottom: 16px; font-weight: 600; color: #4a90d9; }
+    .total { padding: 12px 16px; border-radius: 8px; color: white; font-weight: 700; margin-bottom: 12px; }
+    .caso { background: white; border: 1px solid #dde3f0; border-left: 6px solid; border-radius: 8px; padding: 8px 14px; margin-bottom: 8px; font-size: 13px; }
+    .caso .res { color: #666; margin-top: 2px; }
+    .caso .err { color: #c62828; margin-top: 2px; }
+    .grupo { font-weight: 700; margin: 16px 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="pag">
+    <h2>Pruebas del Analizador de Recibos</h2>
+    <p class="ayuda">Elegi el index.html que queres probar. Corre los recibos de ejemplo y, si existen, los reales de casos-reales.js.</p>
+    <div class="zona" id="zona">Hace clic o arrastra el index.html aca</div>
+    <input type="file" id="archivo" accept=".html" style="display:none"/>
+    <div id="salida"></div>
+  </div>
+
+  <script src="motor.js"></script>
+  <script src="casos.js"></script>
+  <script src="casos-reales.js" onerror="void 0"></script>
+  <script>
+    const zona = document.getElementById("zona");
+    const input = document.getElementById("archivo");
+    const salida = document.getElementById("salida");
+
+    function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+    function mostrar(nombreArchivo, html) {
+      let logica;
+      try { logica = cargarLogica(html); }
+      catch (e) { salida.innerHTML = '<div class="total" style="background:#c62828">' + esc(e.message) + '</div>'; return; }
+
+      const grupos = [["Recibos de ejemplo", CASOS]];
+      if (typeof CASOS_REALES !== "undefined") grupos.push(["Recibos reales (casos-reales.js)", CASOS_REALES]);
+
+      let bien = 0, total = 0, cuerpo = "";
+      grupos.forEach(([titulo, casos]) => {
+        cuerpo += '<div class="grupo">' + esc(titulo) + '</div>';
+        casos.forEach(c => {
+          let r;
+          try { r = correrCaso(logica, c); } catch (e) { r = {ok:false, errores:["Error: " + e.message], resumen:""}; }
+          total++; if (r.ok) bien++;
+          cuerpo += '<div class="caso" style="border-left-color:' + (r.ok ? "#1a6e2e" : "#c62828") + '">' +
+            '<strong>' + (r.ok ? "✓ " : "✗ ") + esc(c.nombre) + '</strong>' +
+            '<div class="res">' + esc(r.resumen) + '</div>' +
+            r.errores.map(e => '<div class="err">' + esc(e) + '</div>').join("") + '</div>';
+        });
+      });
+      const ok = bien === total;
+      salida.innerHTML = '<div class="total" style="background:' + (ok ? "#1a6e2e" : "#c62828") + '">' +
+        esc(nombreArchivo) + ': ' + bien + ' de ' + total + ' bien' + (ok ? "" : " — NO PUBLICAR") + '</div>' + cuerpo;
+    }
+
+    function leer(file) {
+      if (!file) return;
+      const fr = new FileReader();
+      fr.onload = () => mostrar(file.name, fr.result);
+      fr.readAsText(file, "utf-8");
+    }
+
+    zona.onclick = () => input.click();
+    input.onchange = () => { leer(input.files[0]); input.value = ""; };
+    zona.ondragover = e => e.preventDefault();
+    zona.ondrop = e => { e.preventDefault(); leer(e.dataTransfer.files[0]); };
+  </script>
+</body>
+</html>

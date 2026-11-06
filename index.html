@@ -4,9 +4,10 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Analizador de Recibos de Haberes</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Versiones fijas: si se pide "la ultima", una version nueva incompatible puede romper la herramienta de un dia para otro. -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.0/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #f4f6fb; }
@@ -26,15 +27,21 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useMemo } = React;
 
     const PASS = "Estudio2006";
 
+    // ==== LOGICA (inicio) ====
+    // Todo lo que esta entre esta marca y "LOGICA (fin)" es el analisis, sin pantalla.
+    // pruebas/pruebas.html lee este bloque y lo prueba contra recibos de ejemplo: no borrar las marcas
+    // y no usar React ni JSX aca adentro.
+
+    // Un mismo codigo no puede estar en dos de estas listas (ver comentario de ALERTAR_COD).
     const SUMAR_COD = {
       "001001":1,"001002":1,"001003":1,"022022":1,"005934":1,"005915":1,"001111":1,
       "930000":1,"931000":1,"932000":1,"001022":1,"001014":1,"0022011":1,"001020":1,
       "0022022":1,"001000":1,"001005":1,"088000":1,"135388":1,"135378":1,"095000":1,
-      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"15388":1,"001004":1,
+      "088020":1,"135382":1,"005900":1,"001117":1,"114923":1,"001004":1,
       "135389":1,"135390":1,"135391":1,"135392":1,"135393":1,"135394":1,
       "135395":1,"135396":1,"135397":1,"135398":1,"135399":1,"135400":1,
       "135363":1,"135364":1,"135365":1
@@ -43,14 +50,20 @@
       "002001":1,"002000":1,"002020":1,"0098011":1,"06000":1,"05800":1,"318008":1,
       "940000":1,"941000":1,"942000":1,"102000":1,"809000":1,"709000":1,"19598":1,
       "319011":1,"518008":1,"30900":1,"14923":1,"060000":1,"005902":1,
-      "116000":1,"123000":1,"311340":1,"208100":1,"318000":1,"208020":1
+      "116000":1,"123000":1,"311340":1,"208100":1,"318000":1,"208020":1,
+      "15388":1,"204000":1
     };
-    const RESTAR_COD = {"204000":1,"195000":1};
-    const ALERTAR_COD = {"15388":1};
+    // Se descuentan del total del mes.
+    const RESTAR_COD = {"195000":1};
+    // Codigos que hay que consultar antes de decidir: muestran la alerta "consultar a Lean".
+    // Un codigo que esta aca tiene que salir de las otras listas, si no, cual gana depende del orden.
+    const ALERTAR_COD = {};
     // Capital e intereses: cobro de retroactivo (embargo o liquidacion de ANSES). No suman, solo se senalan.
     const RETROACTIVO_COD = {"116000":1,"123000":1};
 
     // Para agregar conceptos nuevos: ["fragmento en minusculas", "sumar"/"no_sumar"/"restar"]
+    // Gana el primero que aparece en el nombre, asi que los fragmentos mas especificos van antes.
+    // Los acentos no importan: "pension" encuentra tambien "Pensión".
     const NOMBRES = [
       ["p.b.u", "sumar"],
       ["prestacion basica universal", "sumar"],
@@ -65,9 +78,7 @@
       ["pbu sent judicial", "sumar"],
       ["pfb-haber mensual", "sumar"],
       ["pension por fallecimiento", "sumar"],
-      ["pensión por fallecimiento", "sumar"],
       ["jubilacion ordinaria pea", "sumar"],
-      ["jubilación ordinaria pea", "sumar"],
       ["haber anual complementario", "sumar"],
       ["complemento al minimo", "sumar"],
       ["complemt al minimo", "sumar"],
@@ -87,8 +98,8 @@
       ["descuento prestacion anual", "no_sumar"],
       ["cuota gremial", "no_sumar"],
       ["credito anses", "no_sumar"],
-      ["crédito anses", "no_sumar"],
       ["descuento ley 24463", "no_sumar"],
+      ["desc ley 24463 art 9", "no_sumar"],   // es el codigo 204000 en los recibos que traen codigo
       ["desc adelanto ajuste aumento", "no_sumar"],
       ["aguinaldo", "no_sumar"],
       ["o.s. pami mensual", "no_sumar"],
@@ -114,10 +125,21 @@
       "DESC OBRA SOCIAL": "518008",
     };
 
+    // Minusculas y sin acentos, para comparar nombres.
+    function normalizar(s) {
+      return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    }
+
+    // "02", " 2" o "Juzgado 2" -> "2". Las excepciones por juzgado comparan contra este valor.
+    function normalizarJuzgado(j) {
+      const m = String(j || "").match(/\d+/);
+      return m ? String(parseInt(m[0], 10)) : "";
+    }
+
     function clasificarPorNombre(desc) {
-      const d = desc.toLowerCase();
+      const d = normalizar(desc);
       for (const [frag, accion] of NOMBRES) {
-        if (d.includes(frag)) return accion;
+        if (d.includes(normalizar(frag))) return accion;
       }
       return "desconocido";
     }
@@ -141,63 +163,132 @@
     const MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
     function detectarPeriodo(linea, sig) {
-      const m1 = linea.match(/[Pp]er[ií]odo\s*[\n\r]?\s*(\d{1,2})\/(\d{4})/);
+      const m1 = linea.match(/per[ií]odo\s*[\n\r]?\s*(\d{1,2})\/(\d{4})/i);
       if (m1) return m1[1].padStart(2,"0") + "/" + m1[2];
-      if (/^[Pp]er[ií]odo\s*$/.test(linea) && sig) {
+      if (/^per[ií]odo\s*$/i.test(linea) && sig) {
         const m2 = sig.match(/^(\d{1,2})\/(\d{4})$/);
         if (m2) return m2[1].padStart(2,"0") + "/" + m2[2];
       }
-      const m3 = linea.match(/[Ff]echa\s+[Ll]iquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      const m3 = linea.match(/fecha\s+liquidaci[oó]n\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
       if (m3) return m3[2].padStart(2,"0") + "/" + m3[3];
       const m4 = linea.match(/\b(\d{2})\/(\d{4})\b/);
       if (m4) return m4[1] + "/" + m4[2];
       for (let i = 0; i < MESES.length; i++) {
-        const mm = linea.match(new RegExp(MESES[i] + "\\s+(\\d{4})"));
+        const mm = linea.match(new RegExp(MESES[i] + "\\s+(\\d{4})", "i"));
         if (mm) return String(i+1).padStart(2,"0") + "/" + mm[1];
       }
       return null;
     }
 
+    // Encabezados y totales del recibo: tienen monto pero no son conceptos.
+    const RE_ENCABEZADO = /^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i;
+    // Algo que parece un monto: "1.234,56".
+    const RE_MONTO = /\d,\d{2}(?!\d)/;
+    const RE_MONTO_TODOS = /[\d.]+,\d{2}(?!\d)/g;
+
+    // En el recibo una deduccion puede venir con guion antes del monto ("- $ 1.234,56") o despues ("1.234,56-").
+    function conGuion(antes, despues) {
+      return /-\s*\$?\s*$/.test(antes) || despues === "-";
+    }
+
+    // Lee el "Total a cobrar" que trae el recibo, en la misma linea o en la siguiente.
+    // Si el recibo no lo trae devuelve null: nunca se calcula uno.
+    function leerTotalCobrar(l, sig) {
+      if (!/total\s+a\s+cobrar/i.test(l)) return null;
+      const m = l.match(/([\d.]+,\d{2})\s*-?\s*$/);
+      if (m) return {monto: parseMonto(m[1]), usaSiguiente: false};
+      if (sig && /^\$?\s*[\d.]+,\d{2}$/.test(sig)) return {monto: parseMonto(sig), usaSiguiente: true};
+      return null;
+    }
+
     function parsearBloque(texto, juzgado) {
       const lineas = texto.split("\n");
-      const items = [], alertas = [], vistos = {};
+      const items = [], alertas = [], vistos = {}, totalesCobrar = [];
       let periodo = null;
       for (let i = 0; i < lineas.length; i++) {
         const l = lineas[i].trim();
         if (!l) continue;
-        if (!periodo) periodo = detectarPeriodo(l, lineas[i+1] ? lineas[i+1].trim() : null);
-        const mcViejo = l.match(/^(\d{3})\s+(\d{3})\s*-?\s*(.+?)\s+([\d.]+,\d{2})\s*-?\s*$/);
-        if (mcViejo) {
-          const cod = mcViejo[1] + mcViejo[2];
-          const monto = parseMonto(mcViejo[4]);
+        const sig = lineas[i+1] ? lineas[i+1].trim() : null;
+        if (!periodo) periodo = detectarPeriodo(l, sig);
+        const tc = leerTotalCobrar(l, sig);
+        if (tc !== null) { totalesCobrar.push(tc.monto); if (tc.usaSiguiente) i++; continue; }
+        // Codigo en dos partes de 3 digitos ("001 002 - PC-HABER MENSUAL") o pegado, de 4 a 7 digitos ("15388 - ...").
+        const mcViejo = l.match(/^(\d{3})\s+(\d{3})\s*-?\s*(.+?)\s+([\d.]+,\d{2})\s*(-?)\s*$/);
+        const mcPegado = !mcViejo && l.match(/^(\d{4,7})(?!\d)\s*-?\s*(.+?)\s+([\d.]+,\d{2})\s*(-?)\s*$/);
+        if (mcViejo || mcPegado) {
+          const cod = mcViejo ? mcViejo[1] + mcViejo[2] : mcPegado[1];
+          const descCruda = mcViejo ? mcViejo[3] : mcPegado[2];
+          const monto = parseMonto(mcViejo ? mcViejo[4] : mcPegado[3]);
           if (isNaN(monto) || monto === 0) continue;
           const clase = clasificarPorCod(cod, juzgado);
           if (clase === "desconocido" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"desconocido", cod, linea:l, monto}); }
           else if (clase === "alerta_especial" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"alerta_especial", cod, linea:l, monto}); }
           else if (clase === "no_suma_excepcion" && !vistos[cod]) { vistos[cod]=1; alertas.push({tipo:"excepcion_juzgado", cod, linea:l, monto}); }
-          items.push({cod, desc: mcViejo[3].replace(/[\s$-]+$/, ""), monto, clase, linea:l});
+          items.push({cod, desc: descCruda.replace(/[\s$-]+$/, ""), monto, clase, linea:l,
+            guion: conGuion(descCruda, mcViejo ? mcViejo[5] : mcPegado[4])});
           continue;
         }
-        const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*-?\s*$/) ||
-                        l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Za-z0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*$/);
+        const mcNuevo = l.match(/^([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜA-Za-záéíóúñü0-9 \.\-\/]+?)\s+\$?\s*([\d.]+,\d{2})\s*(-?)\s*$/) ||
+                        l.match(/^([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜA-Za-záéíóúñü0-9 \.\-\/]+?)\s+-\s+\$?\s*([\d.]+,\d{2})\s*()$/);
         if (mcNuevo) {
           const desc = mcNuevo[1].replace(/[\s$-]+$/, "");
-          if (/^(concepto|haberes|deducciones|subtotal|total a cobrar|total|per[ií]odo|prestaci[oó]n|titular|cuil|beneficio|n[°º]|persona)/i.test(desc)) continue;
-          const monto = parseFloat(mcNuevo[2].replace(/\./g,"").replace(",","."));
+          if (RE_ENCABEZADO.test(desc)) continue;
+          const monto = parseMonto(mcNuevo[2]);
           if (isNaN(monto) || monto === 0) continue;
           const clase = clasificarPorNombre(desc);
-          const key = desc.toLowerCase();
+          const key = normalizar(desc);
           if (clase === "desconocido" && !vistos[key]) { vistos[key]=1; alertas.push({tipo:"desconocido_nombre", desc, linea:l, monto}); }
-          items.push({cod: null, codMostrado: CODIGO_POR_NOMBRE[desc.toUpperCase()] || null, desc, monto, clase, linea:l});
+          const guion = conGuion(l.slice(0, l.lastIndexOf(mcNuevo[2])), mcNuevo[3]);
+          items.push({cod: null, codMostrado: CODIGO_POR_NOMBRE[desc.toUpperCase()] || null, desc, monto, clase, linea:l, guion});
+          continue;
+        }
+        // Red de seguridad: una linea con monto que no se pudo leer no se descarta en silencio.
+        if (RE_MONTO.test(l) && !RE_ENCABEZADO.test(l)) {
+          const montos = l.match(RE_MONTO_TODOS) || [];
+          if (montos.some(m => parseMonto(m) !== 0)) alertas.push({tipo:"linea_no_leida", linea:l});
         }
       }
-      const sumaTotal = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
-      const retroactivos = items.filter(it => it.cod && RETROACTIVO_COD[it.cod]);
-      return {periodo, items, sumaTotal, alertas, retroactivos};
+
+      if (!periodo && items.length) alertas.push({tipo:"sin_periodo"});
+
+      // El mismo concepto que suma, dos veces en el mes: pueden ser dos recibos que quedaron juntos.
+      const vistosSuma = {};
+      items.filter(it => it.clase === "sumar").forEach(it => {
+        const k = it.cod || normalizar(it.desc);
+        if (vistosSuma[k] === 1) alertas.push({tipo:"concepto_repetido", cod: it.cod, desc: it.desc});
+        vistosSuma[k] = (vistosSuma[k] || 0) + 1;
+      });
+
+      // Si todas las lineas traen guion, es un separador del formato y no indica deduccion.
+      const guionEsSigno = items.some(it => !it.guion);
+      items.forEach(it => { it.negativo = guionEsSigno && it.guion; });
+      items.filter(it => it.clase === "sumar" && it.negativo)
+        .forEach(it => alertas.push({tipo:"suma_en_negativo", cod: it.cod, desc: it.desc, monto: it.monto}));
+
+      const sumado = items.reduce((a,it) => it.clase === "sumar" ? a + it.monto : a, 0);
+      const restado = items.reduce((a,it) => it.clase === "restar" ? a + it.monto : a, 0);
+      const sumaTotal = sumado - restado;
+
+      // Control contra el "Total a cobrar" del recibo: solo si el recibo lo trae, y una sola vez.
+      let totalCobrar = null, netoLeido = null, cierra = null;
+      if (totalesCobrar.length > 1) alertas.push({tipo:"total_cobrar_repetido", cantidad: totalesCobrar.length});
+      else if (totalesCobrar.length === 1) {
+        totalCobrar = totalesCobrar[0];
+        netoLeido = items.reduce((a,it) => a + (it.negativo ? -it.monto : it.monto), 0);
+        cierra = Math.abs(netoLeido - totalCobrar) < 0.01;
+        if (!cierra) alertas.push({tipo:"total_no_cierra", totalCobrar, netoLeido});
+      }
+
+      const retroactivos = items.filter(it => RETROACTIVO_COD[it.cod || it.codMostrado]);
+      // Todo lo que no se suma (incluye lo que se resta) va en el aviso del mes, para controlarlo con el codigo.
+      const sinSumar = items.filter(it => it.clase !== "sumar");
+      return {periodo, items, sumaTotal, alertas, retroactivos, sinSumar, totalCobrar, netoLeido, cierra};
     }
 
+    // Corta el texto en un bloque por recibo. "PERÍODO" en mayusculas corta solo si le sigue la fecha,
+    // para no partir un recibo en dos por un encabezado.
     function dividirEnPeriodos(texto) {
-      const bloques = texto.split(/(?=(?:Per[ií]odo|Fecha\s+Liquidaci[oó]n))/);
+      const bloques = texto.split(/(?=Per[ií]odo|PER[IÍ]ODO\s*:?\s*\d{1,2}\/\d{4}|Fecha\s+Liquidaci[oó]n|FECHA\s+LIQUIDACI[OÓ]N\s*:?\s*\d)/);
       return bloques.filter(b => b.trim()).length > 0 ? bloques.filter(b => b.trim()) : [texto];
     }
 
@@ -207,8 +298,123 @@
       return parseInt(parts[1]) * 100 + parseInt(parts[0]);
     }
 
+    // Avisos que miran todos los meses juntos: meses repetidos y meses que faltan.
+    function controlarPeriodos(resultados) {
+      const alertas = [];
+      const porPeriodo = {};
+      resultados.forEach(r => { if (r.periodo) (porPeriodo[r.periodo] = porPeriodo[r.periodo] || []).push(r); });
+      Object.keys(porPeriodo).forEach(p => {
+        if (porPeriodo[p].length > 1) alertas.push({tipo:"periodo_repetido", periodo:p, cantidad: porPeriodo[p].length,
+          archivos: porPeriodo[p].map(r => r.archivo).filter(Boolean)});
+      });
+      const ordenados = Object.keys(porPeriodo).sort((a,b) => parsePeriodo(a) - parsePeriodo(b));
+      if (ordenados.length > 1) {
+        const faltan = [];
+        let [mes, anio] = ordenados[0].split("/").map(Number);
+        const fin = parsePeriodo(ordenados[ordenados.length-1]);
+        while (anio * 100 + mes < fin) {
+          const p = String(mes).padStart(2,"0") + "/" + anio;
+          if (!porPeriodo[p]) faltan.push(p);
+          mes++; if (mes > 12) { mes = 1; anio++; }
+        }
+        if (faltan.length) alertas.push({tipo:"periodos_faltantes", periodos: faltan});
+      }
+      return alertas;
+    }
+
+    // Analiza uno o varios recibos. archivos: [{nombre, texto}]; nombre es null si el texto se pego a mano.
+    // Cada archivo se corta por separado, para que un PDF sin periodo no se mezcle con el anterior.
+    function analizarArchivos(archivos, juzgado) {
+      const juz = normalizarJuzgado(juzgado);
+      const resultados = [];
+      archivos.forEach(a => {
+        dividirEnPeriodos(a.texto).forEach(b => {
+          const r = parsearBloque(b, juz);
+          if (r.items.length > 0 || r.alertas.length > 0) resultados.push(Object.assign(r, {archivo: a.nombre}));
+        });
+      });
+      resultados.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo));
+      return {resultados, alertasGenerales: controlarPeriodos(resultados)};
+    }
+
+    // Arma las lineas de una pagina del PDF juntando los textos que estan a la misma altura.
+    // Tolera 2 puntos de diferencia: a veces el concepto y el monto de un renglon quedan apenas desfasados.
+    function textoDePagina(items) {
+      const ordenados = items.map(it => ({x: it.transform[4], y: it.transform[5], str: it.str}))
+        .sort((a,b) => b.y - a.y || a.x - b.x);
+      const renglones = [];
+      ordenados.forEach(it => {
+        const ult = renglones[renglones.length-1];
+        if (ult && Math.abs(ult.y - it.y) <= 2) ult.items.push(it);
+        else renglones.push({y: it.y, items: [it]});
+      });
+      return renglones.map(r => r.items.sort((a,b) => a.x-b.x).map(i => i.str).join(" ")).join("\n") + "\n";
+    }
+
     function fmt(n) {
       return n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+    // ==== LOGICA (fin) ====
+
+    const NOMBRE_CLASE = {
+      sumar:"Suma", no_sumar:"No suma", restar:"Resta", desconocido:"No reconocido",
+      alerta_especial:"Consultar", no_suma_excepcion:"No suma en este juzgado"
+    };
+
+    // Por que un concepto no se sumo, tal como se lee en el aviso del mes.
+    function motivoSinSumar(it) {
+      if (RETROACTIVO_COD[it.cod || it.codMostrado]) return "No suma: retroactivo / intereses";
+      if (it.clase === "restar") return "Se resta del total del mes";
+      if (it.clase === "desconocido") return "No reconocido: revisar si se suma";
+      return NOMBRE_CLASE[it.clase] || it.clase;
+    }
+
+    // Exportar a CSV (lo abre Excel). Separado por ";" y con BOM para que Excel respete los acentos.
+    // Primero un resumen por mes y abajo el detalle de cada concepto.
+    function descargarCSV(resultados, totalGeneral, titular) {
+      const num = (n) => n.toFixed(2).replace(".", ",");
+      const filas = [["RESUMEN POR MES"], ["Periodo","Total del mes (suma - resta)","Total a cobrar segun recibo","Control","Archivo"]];
+      resultados.forEach(r => {
+        filas.push([r.periodo || "", num(r.sumaTotal),
+          r.totalCobrar === null ? "" : num(r.totalCobrar),
+          r.totalCobrar === null ? "El recibo no trae total" : (r.cierra ? "Cierra" : "No cierra"),
+          r.archivo || ""]);
+      });
+      filas.push(["TOTAL GENERAL", num(totalGeneral)]);
+      filas.push([]);
+      filas.push(["DETALLE"], ["Periodo","Codigo","Concepto","Monto","Clasificacion","Aviso","Archivo"]);
+      resultados.forEach(r => {
+        r.items.forEach(it => {
+          filas.push([r.periodo || "", it.cod || it.codMostrado || "sin codigo", it.desc || "", num(it.monto), NOMBRE_CLASE[it.clase] || it.clase,
+            it.clase === "sumar" ? "" : "Controlar: " + motivoSinSumar(it), r.archivo || ""]);
+        });
+      });
+      const csv = filas.map(f => f.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(";")).join("\n");
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "analisis-haberes" + (titular.trim() ? " - " + titular.trim() : "") + ".csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function textoAlerta(a) {
+      switch (a.tipo) {
+        case "desconocido": return "Codigo " + a.cod + " no reconocido";
+        case "desconocido_nombre": return "Concepto \"" + a.desc + "\" no reconocido - revisar si se suma ($" + fmt(a.monto) + ")";
+        case "alerta_especial": return "Codigo " + a.cod + " - consultar a Lean";
+        case "excepcion_juzgado": return "Codigo " + a.cod + " no suma en este juzgado";
+        case "linea_no_leida": return "Linea con monto que no se pudo leer, revisarla a mano: \"" + a.linea + "\"";
+        case "sin_periodo": return "No se encontro el periodo de este recibo";
+        case "concepto_repetido": return "\"" + (a.cod ? a.cod + " " : "") + a.desc + "\" aparece dos veces en el mismo mes: pueden ser dos recibos juntos";
+        case "suma_en_negativo": return "\"" + (a.cod ? a.cod + " " : "") + a.desc + "\" se suma, pero en el recibo figura con signo negativo ($" + fmt(a.monto) + ")";
+        case "total_cobrar_repetido": return "El recibo trae " + a.cantidad + " \"Total a cobrar\": pueden ser dos recibos juntos. No se controlo el total";
+        case "total_no_cierra": return "No cierra con el Total a cobrar del recibo: el recibo dice $" + fmt(a.totalCobrar) + " y lo leido da $" + fmt(a.netoLeido) + " (diferencia $" + fmt(a.netoLeido - a.totalCobrar) + "). Puede faltar una linea";
+        case "periodo_repetido": return "El periodo " + a.periodo + " aparece " + a.cantidad + " veces" + (a.archivos.length ? " (" + a.archivos.join(", ") + ")" : "") + ": se sumo " + a.cantidad + " veces en el total general";
+        case "periodos_faltantes": return "Faltan recibos de: " + a.periodos.join(", ");
+        default: return a.tipo;
+      }
     }
 
     function FilaCodigos({label, items, colorFn}) {
@@ -257,12 +463,17 @@
       const [juzgado, setJuzgado] = useState("");
       const [titular, setTitular] = useState("");
       const [texto, setTexto] = useState("");
-      const [resultados, setResultados] = useState([]);
+      // Texto de los recibos analizados. Los resultados se recalculan solos si cambia el juzgado.
+      const [archivos, setArchivos] = useState(null);
       const [modo, setModo] = useState("pdf");
       const [procesando, setProcesando] = useState(false);
       const [progreso, setProgreso] = useState("");
       const [pdfReady, setPdfReady] = useState(false);
       const fileRef = useRef();
+
+      const juz = normalizarJuzgado(juzgado);
+      const analisis = useMemo(() => archivos ? analizarArchivos(archivos, juz) : {resultados:[], alertasGenerales:[]}, [archivos, juz]);
+      const resultados = analisis.resultados;
 
       useEffect(() => {
         if (!window.pdfjsLib) {
@@ -280,82 +491,75 @@
 
       if (!auth) return React.createElement(Login, {onOk: () => setAuth(true)});
 
-      const hint = juzgado==="2" ? "Juzgado 2: 005934 NO se suma"
-        : (juzgado==="1"||juzgado==="9") ? "Juzgado "+juzgado+": 003900 NO se suma" : "";
-
-      const procesarTexto = (txt) => {
-        const bloques = dividirEnPeriodos(txt);
-        const nuevos = bloques.map(b => parsearBloque(b, juzgado)).filter(r => r.items.length > 0);
-        return nuevos.sort((a,b) => parsePeriodo(a.periodo) - parsePeriodo(b.periodo));
-      };
+      const hint = juz==="2" ? "Juzgado 2: 005934 NO se suma"
+        : (juz==="1"||juz==="9") ? "Juzgado "+juz+": 003900 NO se suma" : "";
 
       const analizar = () => {
-        if (!juzgado) { alert("Ingresa el numero de juzgado."); return; }
+        if (!juz) { alert("Ingresa el numero de juzgado."); return; }
         if (!texto.trim()) { alert("Pega el texto primero."); return; }
-        setResultados(procesarTexto(texto));
+        setArchivos([{nombre:null, texto}]);
       };
 
-      const procesarPDF = (file) => {
-        if (!juzgado) { alert("Ingresa el numero de juzgado primero."); return; }
-        if (!pdfReady) { alert("PDF.js todavia cargando, intenta en un segundo."); return; }
-        setProcesando(true);
-        setProgreso("Leyendo PDF...");
-        setResultados([]);
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const data = new Uint8Array(e.target.result);
-          window.pdfjsLib.getDocument({data}).promise.then((pdf) => {
-            const total = pdf.numPages;
-            let textoCompleto = "";
-            const procesarPagina = (n) => {
-              if (n > total) {
-                setProcesando(false);
-                setProgreso("");
-                setResultados(procesarTexto(textoCompleto));
-                return;
-              }
-              setProgreso("Procesando pagina " + n + " de " + total + "...");
-              pdf.getPage(n).then((page) => {
-                page.getTextContent().then((content) => {
-                  const byY = {};
-                  content.items.forEach((item) => {
-                    const y = Math.round(item.transform[5]);
-                    if (!byY[y]) byY[y] = [];
-                    byY[y].push({x: item.transform[4], str: item.str});
-                  });
-                  Object.keys(byY).sort((a,b) => b-a).forEach((y) => {
-                    byY[y].sort((a,b) => a.x-b.x);
-                    textoCompleto += byY[y].map(i => i.str).join(" ") + "\n";
-                  });
-                  setTimeout(() => procesarPagina(n+1), 0);
-                });
+      const leerPDF = (file, avisar) =>
+        file.arrayBuffer()
+          .then(buf => window.pdfjsLib.getDocument({data: new Uint8Array(buf)}).promise)
+          .then(pdf => {
+            let textoPDF = "";
+            const pagina = (n) => {
+              if (n > pdf.numPages) return Promise.resolve(textoPDF);
+              avisar(n, pdf.numPages);
+              return pdf.getPage(n).then(p => p.getTextContent()).then(content => {
+                textoPDF += textoDePagina(content.items);
+                return pagina(n+1);
               });
             };
-            procesarPagina(1);
-          }).catch((err) => {
+            return pagina(1);
+          });
+
+      // Lee uno o varios PDF, uno detras del otro.
+      const procesarPDFs = (files) => {
+        if (!juz) { alert("Ingresa el numero de juzgado primero."); return; }
+        if (!pdfReady) { alert("PDF.js todavia cargando, intenta en un segundo."); return; }
+        if (!files.length) return;
+        setProcesando(true);
+        setArchivos(null);
+        const leidos = [];
+        const siguiente = (i) => {
+          if (i >= files.length) {
             setProcesando(false);
             setProgreso("");
-            alert("Error leyendo el PDF: " + err.message);
-          });
+            setArchivos(leidos);
+            return;
+          }
+          const f = files[i];
+          const prefijo = files.length > 1 ? "Archivo " + (i+1) + " de " + files.length + " - " : "";
+          leerPDF(f, (n, total) => setProgreso(prefijo + "Procesando pagina " + n + " de " + total + "..."))
+            .then(t => { leidos.push({nombre: f.name, texto: t}); siguiente(i+1); })
+            .catch(err => {
+              setProcesando(false);
+              setProgreso("");
+              alert("Error leyendo " + f.name + ": " + err.message);
+            });
         };
-        reader.readAsArrayBuffer(file);
+        siguiente(0);
       };
 
       const onDrop = (e) => {
         e.preventDefault();
-        const file = Array.from(e.dataTransfer.files).find(f => f.type==="application/pdf");
-        if (file) procesarPDF(file);
+        if (procesando) return;
+        procesarPDFs(Array.from(e.dataTransfer.files).filter(f => f.type==="application/pdf"));
       };
 
-      const limpiar = () => { setResultados([]); setTexto(""); };
+      const limpiar = () => { setArchivos(null); setTexto(""); };
       const totalGeneral = resultados.reduce((a,r) => a+(r.sumaTotal||0), 0);
       const todasAlertas = resultados.reduce((acc,r) => acc.concat((r.alertas||[]).map(a => Object.assign({}, a, {periodo:r.periodo}))), []);
+      const alertasGenerales = analisis.alertasGenerales;
       const periodos = resultados.map(r => r.periodo).filter(Boolean);
 
       // El titulo de la pagina es el nombre que el navegador sugiere al guardar como PDF.
       const imprimir = () => {
         const tituloOriginal = document.title;
-        document.title = "Recibos" + (titular.trim() ? " - " + titular.trim() : "") + " - Juzgado " + juzgado;
+        document.title = "Recibos" + (titular.trim() ? " - " + titular.trim() : "") + " - Juzgado " + juz;
         window.addEventListener("afterprint", () => { document.title = tituloOriginal; }, {once:true});
         window.print();
       };
@@ -364,7 +568,7 @@
         <div style={{fontFamily:"system-ui,sans-serif", padding:20, maxWidth:960, margin:"0 auto", color:"#1a1a2e"}}>
           <div className="no-print">
           <h2 style={{marginBottom:4}}>Analizador de Recibos de Haberes</h2>
-          <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subi el PDF directamente o pega el texto copiado.</p>
+          <p style={{color:"#666", fontSize:13, marginBottom:16}}>Subi los PDF directamente o pega el texto copiado.</p>
 
           <div style={{display:"flex", alignItems:"center", gap:16, marginBottom:14, flexWrap:"wrap"}}>
             <div style={{display:"flex", alignItems:"center", gap:8}}>
@@ -398,8 +602,8 @@
               onClick={()=>{ if(!procesando) fileRef.current.click(); }}
               style={{border:"2px dashed #4a90d9", borderRadius:10, padding:36, textAlign:"center",
                 background: procesando ? "#f9f9f9" : "#f0f7ff", cursor: procesando ? "default" : "pointer", marginBottom:16}}>
-              <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}}
-                onChange={e=>{ if(e.target.files[0]) procesarPDF(e.target.files[0]); e.target.value=""; }}/>
+              <input ref={fileRef} type="file" accept=".pdf" multiple style={{display:"none"}}
+                onChange={e=>{ procesarPDFs(Array.from(e.target.files)); e.target.value=""; }}/>
               {procesando ? (
                 <div>
                   <div style={{fontSize:24, marginBottom:8}}>&#9203;</div>
@@ -410,9 +614,9 @@
                 <div>
                   <div style={{fontSize:32}}>&#128194;</div>
                   <div style={{fontWeight:600, color:"#4a90d9", marginTop:4}}>
-                    {pdfReady ? "Hace clic o arrastra el PDF aca" : "Cargando lector de PDF..."}
+                    {pdfReady ? "Hace clic o arrastra los PDF aca" : "Cargando lector de PDF..."}
                   </div>
-                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Soporta PDFs de cualquier tamano</div>
+                  <div style={{fontSize:12, color:"#888", marginTop:4}}>Se pueden subir varios a la vez, de cualquier tamano</div>
                 </div>
               )}
             </div>
@@ -444,12 +648,16 @@
           )}
 
           {resultados.length > 0 && (
-            <div style={{marginBottom:16}}>
+            <div style={{marginBottom:16, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}>
               <button onClick={imprimir}
                 style={{padding:"9px 22px", background:"#1a1a2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
                 Imprimir / Guardar PDF
               </button>
-              <span style={{fontSize:12, color:"#888", marginLeft:10}}>Para exportar, elegi "Guardar como PDF" como impresora.</span>
+              <button onClick={()=>descargarCSV(resultados, totalGeneral, titular)}
+                style={{padding:"9px 22px", background:"#1a6e2e", color:"white", border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:14}}>
+                Descargar Excel (CSV)
+              </button>
+              <span style={{fontSize:12, color:"#888"}}>Para el PDF, elegi "Guardar como PDF" como impresora.</span>
             </div>
           )}
           </div>
@@ -459,23 +667,24 @@
               <div style={{fontWeight:700, fontSize:18, marginBottom:4}}>Analisis de Recibos de Haberes</div>
               <div style={{fontSize:13, lineHeight:1.6}}>
                 {titular.trim() && <span><strong>Titular:</strong> {titular.trim()}<span style={{color:"#ccc", margin:"0 10px"}}>|</span></span>}
-                <strong>Juzgado N:</strong> {juzgado}
+                <strong>Juzgado N:</strong> {juz}
                 {periodos.length > 0 && <span><span style={{color:"#ccc", margin:"0 10px"}}>|</span><strong>Periodos:</strong> {periodos[0] + " a " + periodos[periodos.length-1] + " (" + periodos.length + ")"}</span>}
                 <span style={{color:"#ccc", margin:"0 10px"}}>|</span><strong>Emitido:</strong> {new Date().toLocaleDateString("es-AR")}
               </div>
             </div>
           )}
 
-          {todasAlertas.length > 0 && (
+          {(alertasGenerales.length > 0 || todasAlertas.length > 0) && (
             <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:8, padding:14, marginBottom:16}}>
               <strong style={{display:"block", marginBottom:8}}>Alertas que requieren revision manual:</strong>
+              {alertasGenerales.map((a,i) => (
+                <div key={"g"+i} style={{fontSize:13, marginBottom:4, padding:"4px 0", borderBottom:"1px solid #fde8a0", fontWeight:600}}>
+                  {textoAlerta(a)}
+                </div>
+              ))}
               {todasAlertas.map((a,i) => (
                 <div key={i} style={{fontSize:13, marginBottom:4, padding:"4px 0", borderBottom:"1px solid #fde8a0"}}>
-                  <strong>{a.periodo}</strong> &#8212;{" "}
-                  {a.tipo==="desconocido" && ("Codigo " + a.cod + " no reconocido")}
-                  {a.tipo==="desconocido_nombre" && ("Concepto \"" + a.desc + "\" no reconocido - revisar si se suma ($" + fmt(a.monto) + ")")}
-                  {a.tipo==="alerta_especial" && ("Codigo " + a.cod + " - consultar a Lean")}
-                  {a.tipo==="excepcion_juzgado" && ("Codigo " + a.cod + " no suma en este juzgado")}
+                  <strong>{a.periodo || "-"}</strong> &#8212;{" "}{textoAlerta(a)}
                 </div>
               ))}
             </div>
@@ -483,28 +692,46 @@
 
           {resultados.map((r,i) => {
             const sumados = r.items.filter(it => it.clase==="sumar");
-            const noSumados = r.items.filter(it => it.clase!=="sumar");
             return (
               <div key={i} className="no-cortar" style={{marginBottom:12, border:"1px solid #dde3f0", borderRadius:8, overflow:"hidden"}}>
                 <div style={{background:"#1a1a2e", color:"white", padding:"8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6}}>
                   <div style={{display:"flex", flexDirection:"column", gap:2}}>
                     <span style={{fontWeight:700, fontSize:15}}>{r.periodo||"-"}</span>
                     {titular && <span style={{fontSize:12, color:"#a0c4ff", fontWeight:500}}>{titular}</span>}
+                    {archivos && archivos.length > 1 && r.archivo && <span style={{fontSize:11, color:"#a0a8c0"}}>{r.archivo}</span>}
                     {r.retroactivos.length > 0 && (
                       <span style={{background:"#8e44ad", borderRadius:4, padding:"2px 8px", fontSize:12, fontWeight:700, alignSelf:"flex-start"}}>
-                        {"⚠ COBRO RETROACTIVO / INTERESES: " + r.retroactivos.map(it => it.cod + " $" + fmt(it.monto)).join(" | ")}
+                        {"⚠ COBRO RETROACTIVO / INTERESES: " + r.retroactivos.map(it => (it.cod || it.codMostrado) + " $" + fmt(it.monto)).join(" | ")}
                       </span>
                     )}
                   </div>
-                  <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
+                  <div style={{display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2}}>
+                    <span style={{fontWeight:700, fontSize:15}}>Total: {"$"+fmt(r.sumaTotal)}</span>
+                    {r.totalCobrar !== null && (
+                      <span style={{fontSize:12, color: r.cierra ? "#9be7a9" : "#ffb199", fontWeight:600}}>
+                        {"Total a cobrar del recibo: $" + fmt(r.totalCobrar) + (r.cierra ? " ✓ cierra" : " ✗ no cierra")}
+                      </span>
+                    )}
+                  </div>
                   {r.alertas && r.alertas.length > 0
                     ? <span style={{background:"#e67e22", borderRadius:4, padding:"1px 8px", fontSize:12, fontWeight:700}}>{r.alertas.length + " alerta" + (r.alertas.length>1?"s":"")}</span>
                     : <span style={{background:"#1a6e2e", borderRadius:4, padding:"1px 8px", fontSize:12}}>OK</span>}
                 </div>
                 <div style={{padding:"10px 14px", background:"white"}}>
                   {React.createElement(FilaCodigos, {label:"SE SUMAN:", items:sumados, colorFn:()=>"#1a6e2e"})}
-                  {React.createElement(FilaCodigos, {label:"NO SE SUMAN:", items:noSumados,
-                    colorFn:(it) => RETROACTIVO_COD[it.cod]?"#8e44ad": it.clase==="desconocido"||it.clase==="desconocido_nombre"?"#e65100": it.clase==="alerta_especial"?"#f57f17": it.clase==="restar"?"#c62828":"#999"})}
+                  {r.sinSumar.length > 0 && (
+                    <div style={{background:"#fff8e1", border:"1px solid #f0ad4e", borderRadius:6, padding:"8px 10px", marginTop:6}}>
+                      <div style={{fontWeight:700, fontSize:12, marginBottom:4}}>{"⚠ NO SE SUMARON (" + r.sinSumar.length + ") - controlar monto y codigo:"}</div>
+                      {r.sinSumar.map((it,k) => (
+                        <div key={k} style={{fontSize:13, lineHeight:1.7, display:"flex", gap:8, flexWrap:"wrap"}}>
+                          <strong style={{minWidth:64}}>{it.cod || it.codMostrado || "sin codigo"}</strong>
+                          <span>{it.desc}</span>
+                          <span style={{fontWeight:600}}>{"$" + fmt(it.monto)}</span>
+                          <span style={{color: it.clase==="restar" ? "#c62828" : it.clase==="desconocido" ? "#e65100" : "#8a6d00"}}>{"- " + motivoSinSumar(it)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
