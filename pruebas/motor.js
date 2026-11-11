@@ -40,6 +40,9 @@ function correrCaso(logica, caso) {
     const n = resultados.reduce((a, r) => a + r.sinSumar.length, 0);
     if (n !== caso.sinSumar) errores.push("En el aviso de no sumados se esperaban " + caso.sinSumar + " conceptos y salieron " + n);
   }
+  if (caso.cierra !== undefined) {
+    resultados.forEach(r => { if (r.cierra !== caso.cierra) errores.push((r.periodo || "-") + ": se esperaba que el Total a cobrar " + (caso.cierra ? "cierre" : "no cierre")); });
+  }
   (caso.alertas || []).forEach(t => { if (!tipos.includes(t)) errores.push("Faltó la alerta \"" + t + "\""); });
   if (caso.sinAlertas && tipos.length) errores.push("No tenia que haber alertas y hubo: " + tipos.join(", "));
 

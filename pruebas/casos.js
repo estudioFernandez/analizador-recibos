@@ -10,6 +10,7 @@
 //   alertas      opcional: tipos de alerta que tienen que aparecer
 //   sinAlertas   opcional: true si no tiene que aparecer ninguna
 //   sinSumar     opcional: cuantos conceptos tienen que salir en el aviso "NO SE SUMARON" (sumando todos los meses)
+//   cierra       opcional: true/false, si el Total a cobrar tiene que cerrar contra lo leido (en todos los meses)
 
 const CASOS = [
   {
@@ -97,5 +98,15 @@ const CASOS = [
     nombre: "Nombre con acento y minusculas",
     texto: "Período 01/2025\nPensión por fallecimiento $ 50.000,00\n",
     totales: [["01/2025", 50000]], sinAlertas: true,
+  },
+  {
+    nombre: "Formato de dos columnas (guion en la columna vacia): el Total a cobrar cierra",
+    texto: "Período 03/2025\n001 002 - PC-HABER MENSUAL $ 100.000,00 -\n001 003 - PAP-HABER MENSUAL $ 50.000,00 -\n311 340 - CRÉDITO ANSES-SIPA - $ 1.000,00\n318 008 - O.S. PAMI MENSUAL - $ 4.500,00\nSubtotal $ 150.000,00 $ 5.500,00\nTotal a cobrar $ 144.500,00\n",
+    totales: [["03/2025", 150000]], totalCobrar: [["03/2025", 144500]], sinSumar: 2, sinAlertas: true,
+  },
+  {
+    nombre: "Formato de dos columnas sin codigo: el Total a cobrar cierra",
+    texto: "Período 03/2025\nPC-HABER MENSUAL $ 100.000,00 -\nPAP-HABER MENSUAL $ 50.000,00 -\nO.S. PAMI MENSUAL - $ 4.500,00\nTotal a cobrar $ 145.500,00\n",
+    totales: [["03/2025", 150000]], totalCobrar: [["03/2025", 145500]], cierra: true,
   },
 ];

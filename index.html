@@ -187,8 +187,9 @@
     const RE_MONTO_TODOS = /[\d.]+,\d{2}(?!\d)/g;
 
     // En el recibo una deduccion puede venir con guion antes del monto ("- $ 1.234,56") o despues ("1.234,56-").
+    // Se guarda por separado donde esta el guion: en el formato de dos columnas no significan lo mismo (ver parsearBloque).
     function conGuion(antes, despues) {
-      return /-\s*\$?\s*$/.test(antes) || despues === "-";
+      return {antes: /-\s*\$?\s*$/.test(antes), despues: despues === "-"};
     }
 
     // Lee el "Total a cobrar" que trae el recibo, en la misma linea o en la siguiente.
@@ -259,9 +260,19 @@
         vistosSuma[k] = (vistosSuma[k] || 0) + 1;
       });
 
-      // Si todas las lineas traen guion, es un separador del formato y no indica deduccion.
-      const guionEsSigno = items.some(it => !it.guion);
-      items.forEach(it => { it.negativo = guionEsSigno && it.guion; });
+      // Formato de dos columnas (Haberes | Deducciones) de ANSES: la columna vacia sale como guion.
+      // Un haber queda "$ 1.234,56 -" (guion despues) y una deduccion "- $ 1.234,56" (guion antes).
+      // Si en el mismo recibo hay de las dos, el guion antes del monto es el que marca la deduccion.
+      const soloAntes = items.some(it => it.guion.antes && !it.guion.despues);
+      const soloDespues = items.some(it => it.guion.despues && !it.guion.antes);
+      if (soloAntes && soloDespues) {
+        items.forEach(it => { it.negativo = it.guion.antes; });
+      } else {
+        // Si todas las lineas traen guion, es un separador del formato y no indica deduccion.
+        const tieneGuion = it => it.guion.antes || it.guion.despues;
+        const guionEsSigno = items.some(it => !tieneGuion(it));
+        items.forEach(it => { it.negativo = guionEsSigno && tieneGuion(it); });
+      }
       items.filter(it => it.clase === "sumar" && it.negativo)
         .forEach(it => alertas.push({tipo:"suma_en_negativo", cod: it.cod, desc: it.desc, monto: it.monto}));
 
